@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 16% 7%;
+    --foreground: 40 24% 93%;
+    --card: 222 14% 11%;
+    --card-foreground: 40 24% 93%;
+    --popover: 222 14% 11%;
+    --popover-foreground: 40 24% 93%;
+    --primary: 36 86% 55%;
+    --primary-foreground: 222 16% 8%;
+    --secondary: 222 10% 16%;
+    --secondary-foreground: 40 20% 90%;
+    --muted: 222 10% 16%;
+    --muted-foreground: 35 8% 62%;
+    --accent: 36 40% 18%;
+    --accent-foreground: 36 86% 70%;
+    --destructive: 8 62% 54%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 10% 20%;
+    --input: 222 10% 20%;
+    --ring: 36 86% 55%;
+    --radius: 0.5rem;
+    --blue: 207 38% 48%;
+    --red: 8 50% 53%;
+    --support: 168 40% 59%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+}
+
+[data-sonner-toaster][data-sonner-theme="dark"] {
+  --normal-bg: hsl(var(--card));
+  --normal-border: hsl(var(--border));
+  --normal-text: hsl(var(--foreground));
+  --success-bg: hsl(var(--card));
+  --success-border: hsl(142 46% 42%);
+  --success-text: hsl(var(--foreground));
+  --error-bg: hsl(var(--card));
+  --error-border: hsl(var(--destructive));
+  --error-text: hsl(var(--foreground));
+  font-family: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+[data-sonner-toaster][data-x-position="center"] {
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  transform: none !important;
+}
+[data-sonner-toaster][data-x-position="center"] [data-sonner-toast] {
+  left: 50% !important;
+  right: auto !important;
+  width: max-content !important;
+  max-width: min(22rem, calc(100vw - 2rem)) !important;
+  transform: translateX(-50%) var(--y, translateY(0)) !important;
+}
+[data-sonner-toast] {
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+  border-radius: var(--radius) !important;
+}
+[data-sonner-toast] [data-content],
+[data-sonner-toast] [data-title] {
+  flex: none;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+@media (max-width: 600px) {
+  [data-sonner-toaster][data-x-position="center"] {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    transform: none !important;
+  }
+  [data-sonner-toaster][data-x-position="center"] [data-sonner-toast] {
+    left: 50% !important;
+    right: auto !important;
+    width: max-content !important;
+    max-width: min(22rem, calc(100vw - 2rem)) !important;
+    transform: translateX(-50%) var(--y, translateY(0)) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

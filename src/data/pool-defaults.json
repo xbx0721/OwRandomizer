@@ -1,0 +1,278 @@
+{
+  "version": "2026-09-19-17-52-06",
+  "hash": "3a5c0699156e6f1108e40090195cdcc199ec4dd99d3b650dd9c7fc6b084d57ad",
+  "heroes": {
+    "D.Va": {
+      "rating": "A",
+      "enabled": true
+    },
+    "破坏球": {
+      "rating": "C",
+      "enabled": true
+    },
+    "查莉娅": {
+      "rating": "A",
+      "enabled": true
+    },
+    "温斯顿": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "莱因哈特": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "路霸": {
+      "rating": "C+",
+      "enabled": true
+    },
+    "西格玛": {
+      "rating": "A",
+      "enabled": true
+    },
+    "奥丽莎": {
+      "rating": "B",
+      "enabled": true
+    },
+    "拉玛刹": {
+      "rating": "B",
+      "enabled": true
+    },
+    "末日铁拳": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "渣客女王": {
+      "rating": "C-",
+      "enabled": true
+    },
+    "毛加": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "骇灾": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "D.Mon": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "金驭": {
+      "rating": "C+",
+      "enabled": true
+    },
+    "索杰恩": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "猎空": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "源氏": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "半藏": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "黑百合": {
+      "rating": "C-",
+      "enabled": true
+    },
+    "法老之鹰": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "死神": {
+      "rating": "A",
+      "enabled": true
+    },
+    "士兵：76": {
+      "rating": "B",
+      "enabled": true
+    },
+    "卡西迪": {
+      "rating": "A",
+      "enabled": true
+    },
+    "艾什": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "托比昂": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "堡垒": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "狂鼠": {
+      "rating": "C",
+      "enabled": true
+    },
+    "小美": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "回声": {
+      "rating": "B",
+      "enabled": true
+    },
+    "探奇": {
+      "rating": "B",
+      "enabled": true
+    },
+    "秩序之光": {
+      "rating": "C",
+      "enabled": true
+    },
+    "黑影": {
+      "rating": "C+",
+      "enabled": true
+    },
+    "弗蕾娅": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "斩仇": {
+      "rating": "B",
+      "enabled": true
+    },
+    "西拉": {
+      "rating": "B",
+      "enabled": true
+    },
+    "死怨": {
+      "rating": "A+",
+      "enabled": true
+    },
+    "安燃": {
+      "rating": "B",
+      "enabled": true
+    },
+    "埃姆雷": {
+      "rating": "B",
+      "enabled": true
+    },
+    "安娜": {
+      "rating": "A",
+      "enabled": true
+    },
+    "天使": {
+      "rating": "C-",
+      "enabled": true
+    },
+    "卢西奥": {
+      "rating": "C+",
+      "enabled": true
+    },
+    "禅雅塔": {
+      "rating": "B",
+      "enabled": true
+    },
+    "布丽吉塔": {
+      "rating": "B-",
+      "enabled": true
+    },
+    "莫伊拉": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "雾子": {
+      "rating": "A+",
+      "enabled": true
+    },
+    "巴蒂斯特": {
+      "rating": "A",
+      "enabled": true
+    },
+    "生命之梭": {
+      "rating": "C",
+      "enabled": true
+    },
+    "朱诺": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "伊拉锐": {
+      "rating": "B",
+      "enabled": true
+    },
+    "无漾": {
+      "rating": "B+",
+      "enabled": true
+    },
+    "瑞稀": {
+      "rating": "A-",
+      "enabled": true
+    },
+    "飞天猫": {
+      "rating": "A+",
+      "enabled": true
+    },
+    "血律": {
+      "rating": "S",
+      "enabled": false
+    }
+  },
+  "maps": {
+    "伊利奥斯": true,
+    "漓江塔": true,
+    "尼泊尔": true,
+    "釜山": true,
+    "绿洲城": true,
+    "南极半岛": true,
+    "萨摩亚": true,
+    "多拉多": true,
+    "66号公路": true,
+    "监测站：直布罗陀": true,
+    "皇家赛道": true,
+    "哈瓦那": true,
+    "香巴里寺院": true,
+    "渣客镇": true,
+    "里阿尔托": true,
+    "监测站：格里姆火山": false,
+    "国王大道": true,
+    "好莱坞": true,
+    "努巴尼": true,
+    "艾兴瓦尔德": true,
+    "暴雪世界": true,
+    "中城": true,
+    "帕拉伊苏": true,
+    "霓虹枢纽": true,
+    "新皇后街": true,
+    "埃斯佩兰萨": true,
+    "斗兽场": true,
+    "鲁纳塞彼": true,
+    "新渣客城": true,
+    "苏拉瓦萨": true,
+    "阿特利斯": true,
+    "维多利亚竞技场": false,
+    "红木大坝": false,
+    "塞伦扎": false,
+    "拉克鲁瓦广场": false,
+    "火药桶矿井": false,
+    "泰晤士区": false,
+    "花冈": false,
+    "阿努比斯王座": false,
+    "花村": false,
+    "阿努比斯神殿": false,
+    "沃斯卡娅工业区": false,
+    "“地平线”月球基地": false,
+    "巴黎": false,
+    "吉拉德堡": false,
+    "铁坂": false,
+    "马莱温多": false,
+    "佩特拉": false,
+    "黑森林": false,
+    "城堡": false,
+    "生态监测站：南极洲": false,
+    "墓园": false,
+    "阿育陀耶": false,
+    "五行大学·水学院": false
+  }
+}
