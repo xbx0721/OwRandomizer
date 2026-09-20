@@ -298,11 +298,18 @@ function fillHeroes(
   return teams
 }
 
+const ROLE_ROW = { 坦克: 0, 输出: 1, 支援: 2 } as const
+
+function orderTeams(teams: [Team, Team], balanceRoles: boolean): [Team, Team] {
+  if (!balanceRoles) return teams
+  return teams.map((team) => team.slice().sort((a, b) => ROLE_ROW[a.role] - ROLE_ROW[b.role])) as [Team, Team]
+}
+
 function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
   if (!rules.balanceRatings) {
     for (let i = 0; i < RATE_TRIES; i += 1) {
       const seats = assignSeats(roster, format, rules.balanceRoles)
-      if (seats) return fillHeroes(heroes, seats, rules, format)
+      if (seats) return orderTeams(fillHeroes(heroes, seats, rules, format), rules.balanceRoles)
     }
     throw new Error("玩家偏好设置冲突")
   }
@@ -321,7 +328,7 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
     if (bestCost === 0) break
   }
   if (!best) throw new Error("玩家偏好设置冲突")
-  return best
+  return orderTeams(best, rules.balanceRoles)
 }
 
 export function randomizeMatch(
