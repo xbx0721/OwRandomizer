@@ -359,8 +359,22 @@ export default function App() {
   }
 
   function vacateSeat(index: number) {
-    setRoster((prev) => prev.map((entry, i) => (i === index ? emptySeat() : entry)))
+    setRoster((prev) => prev.map((entry, i) => {
+      if (i === index) return emptySeat()
+      if (!entry.avoid.includes(index)) return entry
+      return { ...entry, avoid: entry.avoid.filter((item) => item !== index) }
+    }))
     if (prefIndex === index) setPrefIndex(null)
+  }
+
+  function toggleAvoid(index: number, other: number) {
+    if (index === other) return
+    setRoster((prev) => prev.map((entry, i) => {
+      if (i !== index && i !== other) return entry
+      const target = i === index ? other : index
+      const on = entry.avoid.includes(target)
+      return { ...entry, avoid: on ? entry.avoid.filter((item) => item !== target) : [...entry.avoid, target] }
+    }))
   }
 
   function patchRoster(index: number, patch: Partial<RosterEntry>) {
@@ -821,27 +835,54 @@ export default function App() {
             </DialogDescription>
           </DialogHeader>
           {prefIndex !== null && roster[prefIndex] ? (
-            <div className="space-y-2">
-              <Label>职责</Label>
-              <ToggleGroup
-                type="multiple"
-                variant="outline"
-                value={roster[prefIndex].roles}
-                onValueChange={(next) => {
-                  if (next.length) patchRoster(prefIndex, { roles: next as Role[] })
-                }}
-                className="grid w-full grid-cols-3 gap-2"
-              >
-                {ALL_ROLES.map((role) => {
-                  const Icon = ROLE_ICON[role]
-                  return (
-                    <ToggleGroupItem key={role} value={role} className="h-16 flex-col gap-1 bg-background data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                      <Icon className="h-4 w-4" />
-                      {role}
-                    </ToggleGroupItem>
-                  )
-                })}
-              </ToggleGroup>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>职责</Label>
+                <ToggleGroup
+                  type="multiple"
+                  variant="outline"
+                  value={roster[prefIndex].roles}
+                  onValueChange={(next) => {
+                    if (next.length) patchRoster(prefIndex, { roles: next as Role[] })
+                  }}
+                  className="grid w-full grid-cols-3 gap-2"
+                >
+                  {ALL_ROLES.map((role) => {
+                    const Icon = ROLE_ICON[role]
+                    return (
+                      <ToggleGroupItem key={role} value={role} className="h-16 flex-col gap-1 bg-background data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                        <Icon className="h-4 w-4" />
+                        {role}
+                      </ToggleGroupItem>
+                    )
+                  })}
+                </ToggleGroup>
+              </div>
+              <div className="space-y-2">
+                <Label>避免同队</Label>
+                {roster.slice(0, format * 2).some((entry, index) => index !== prefIndex && entry.open) ? (
+                  <ScrollArea className="h-48">
+                    <div className="space-y-1 pr-3">
+                      {roster.slice(0, format * 2).map((entry, index) => {
+                        if (index === prefIndex || !entry.open) return null
+                        const id = `avoid-${prefIndex}-${index}`
+                        return (
+                          <label key={index} htmlFor={id} className="flex h-9 cursor-pointer items-center gap-3 rounded-md border px-3">
+                            <Checkbox
+                              id={id}
+                              checked={roster[prefIndex].avoid.includes(index)}
+                              onCheckedChange={() => toggleAvoid(prefIndex, index)}
+                            />
+                            <span className="truncate text-sm">{resolveSeatName(entry, index)}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
+                )}
+              </div>
             </div>
           ) : null}
           <DialogFooter className="sm:justify-stretch">

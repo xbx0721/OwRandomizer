@@ -10,7 +10,7 @@ export const ScrollArea = React.forwardRef<
     <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">{children}</ScrollAreaPrimitive.Viewport>
     <ScrollAreaPrimitive.ScrollAreaScrollbar
       orientation="vertical"
-      className="flex touch-none select-none border-l border-l-transparent p-px transition-colors"
+      className="flex w-2 touch-none select-none border-l border-l-transparent p-px transition-colors"
     >
       <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border" />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>

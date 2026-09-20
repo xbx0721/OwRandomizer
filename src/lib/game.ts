@@ -32,12 +32,13 @@ export type RosterEntry = {
   name: string
   roles: Role[]
   open: boolean
+  avoid: number[]
 }
 
 export const ROSTER_CAP = 12
 
 export function emptySeat(): RosterEntry {
-  return { name: "", roles: [...ALL_ROLES], open: false }
+  return { name: "", roles: [...ALL_ROLES], open: false, avoid: [] }
 }
 
 export function seatLabel(index: number) {
@@ -51,35 +52,43 @@ export function resolveSeatName(entry: Pick<RosterEntry, "name">, index: number)
 export function parseRosterEntry(raw: unknown): RosterEntry {
   if (typeof raw === "string") {
     const name = raw.slice(0, 16)
-    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()) }
+    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()), avoid: [] }
   }
   if (!raw || typeof raw !== "object") return emptySeat()
-  const row = raw as { name?: unknown; roles?: unknown; open?: unknown }
+  const row = raw as { name?: unknown; roles?: unknown; open?: unknown; avoid?: unknown }
   const name = typeof row.name === "string" ? row.name.slice(0, 16) : ""
   const listed = Array.isArray(row.roles) ? row.roles : []
   const roles = ALL_ROLES.filter((role) => listed.includes(role))
   const open = row.open === true || Boolean(name.trim())
-  return { name, roles: roles.length ? roles : [...ALL_ROLES], open }
+  const avoid = Array.isArray(row.avoid)
+    ? [...new Set(row.avoid.filter((item): item is number => Number.isInteger(item) && item >= 0 && item < ROSTER_CAP))]
+    : []
+  return { name, roles: roles.length ? roles : [...ALL_ROLES], open, avoid }
 }
 
 export function padRoster(roster: RosterEntry[]): RosterEntry[] {
   const next = roster.slice(0, ROSTER_CAP).map((row, index) => {
     const entry = parseRosterEntry(row)
-    if (entry.name === seatLabel(index)) return { ...entry, name: "" }
-    return entry
+    const avoid = entry.avoid.filter((item) => item !== index)
+    if (entry.name === seatLabel(index)) return { ...entry, name: "", avoid }
+    return { ...entry, avoid }
   })
   while (next.length < ROSTER_CAP) next.push(emptySeat())
   return next
 }
 
 export function remapRoster(roster: RosterEntry[], from: Format, to: Format): RosterEntry[] {
+  const shifted = roster.map((entry) => ({
+    ...entry,
+    avoid: [...new Set(entry.avoid.map((item) => remapPrefIndex(item, from, to)).filter((item): item is number => item != null))],
+  }))
   if (from === 5 && to === 6) {
-    return padRoster([...roster.slice(0, 5), emptySeat(), ...roster.slice(5, 10), emptySeat()])
+    return padRoster([...shifted.slice(0, 5), emptySeat(), ...shifted.slice(5, 10), emptySeat()])
   }
   if (from === 6 && to === 5) {
-    return padRoster([...roster.slice(0, 5), ...roster.slice(6, 11)])
+    return padRoster([...shifted.slice(0, 5), ...shifted.slice(6, 11)])
   }
-  return padRoster(roster)
+  return padRoster(shifted)
 }
 
 export function remapPrefIndex(index: number | null, from: Format, to: Format): number | null {
@@ -211,32 +220,36 @@ function pickHero(
   return randomItem(candidates)
 }
 
-function splitRoster(roster: RosterEntry[]): [RosterEntry[], RosterEntry[]] {
-  const mixed = shuffle(roster.slice())
-  const half = mixed.length / 2
-  return [mixed.slice(0, half), mixed.slice(half)]
-}
-
 function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolean): { team: 0 | 1; role: Role; entry: RosterEntry }[] | null {
-  if (!balanceRoles) {
-    const [t0, t1] = splitRoster(roster)
-    return [
-      ...t0.map((entry) => ({ team: 0 as const, role: randomItem(allowedRoles(entry)), entry })),
-      ...t1.map((entry) => ({ team: 1 as const, role: randomItem(allowedRoles(entry)), entry })),
-    ]
+  const people = shuffle(roster.map((entry, index) => ({ entry, index })))
+  const slots: { team: 0 | 1; role: Role | null }[] = []
+  if (balanceRoles) {
+    for (const role of roleSlots(format)) slots.push({ team: 0, role })
+    for (const role of roleSlots(format)) slots.push({ team: 1, role })
+  } else {
+    for (let i = 0; i < format; i += 1) slots.push({ team: 0, role: null })
+    for (let i = 0; i < format; i += 1) slots.push({ team: 1, role: null })
   }
-  const slots: { team: 0 | 1; role: Role }[] = []
-  roleSlots(format).forEach((role) => slots.push({ team: 0, role }))
-  roleSlots(format).forEach((role) => slots.push({ team: 1, role }))
-  const people = shuffle(roster.slice())
   const used = slots.map(() => false)
   const pick = people.map(() => -1)
-  const order = people.map((_, index) => index).sort((a, b) => allowedRoles(people[a]).length - allowedRoles(people[b]).length)
+  const order = people.map((_, index) => index).sort((a, b) => allowedRoles(people[a].entry).length - allowedRoles(people[b].entry).length)
   const walk = (depth: number): boolean => {
     if (depth === order.length) return true
     const person = order[depth]
-    const roles = allowedRoles(people[person])
-    const candidates = shuffle(slots.map((_, index) => index).filter((index) => !used[index] && roles.includes(slots[index].role)))
+    const { entry, index: seat } = people[person]
+    const roles = allowedRoles(entry)
+    const candidates = shuffle(slots.map((_, slot) => slot).filter((slot) => {
+      if (used[slot]) return false
+      const need = slots[slot].role
+      if (need && !roles.includes(need)) return false
+      const team = slots[slot].team
+      for (let other = 0; other < people.length; other += 1) {
+        if (pick[other] < 0) continue
+        if (slots[pick[other]].team !== team) continue
+        if (entry.avoid.includes(people[other].index) || people[other].entry.avoid.includes(seat)) return false
+      }
+      return true
+    }))
     for (const slot of candidates) {
       used[slot] = true
       pick[person] = slot
@@ -247,10 +260,10 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
     return false
   }
   if (!walk(0)) return null
-  return people.map((entry, index) => ({
+  return people.map((person, index) => ({
     team: slots[pick[index]].team,
-    role: slots[pick[index]].role,
-    entry,
+    role: slots[pick[index]].role ?? randomItem(allowedRoles(person.entry)),
+    entry: person.entry,
   }))
 }
 
@@ -287,9 +300,11 @@ function fillHeroes(
 
 function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
   if (!rules.balanceRatings) {
-    const seats = assignSeats(roster, format, rules.balanceRoles)
-    if (!seats) throw new Error("玩家偏好设置冲突")
-    return fillHeroes(heroes, seats, rules, format)
+    for (let i = 0; i < RATE_TRIES; i += 1) {
+      const seats = assignSeats(roster, format, rules.balanceRoles)
+      if (seats) return fillHeroes(heroes, seats, rules, format)
+    }
+    throw new Error("玩家偏好设置冲突")
   }
   const target = ratingTarget()
   let best: [Team, Team] | null = null
