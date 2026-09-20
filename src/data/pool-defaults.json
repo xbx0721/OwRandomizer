@@ -1,6 +1,6 @@
 {
-  "version": "2026-09-19-17-52-06",
-  "hash": "3a5c0699156e6f1108e40090195cdcc199ec4dd99d3b650dd9c7fc6b084d57ad",
+  "version": "2026-09-20-13-30-13",
+  "hash": "74faaa0383331115674b4aef418a7265795764def492a471d6061b2d84700f0b",
   "heroes": {
     "D.Va": {
       "rating": "A",
@@ -11,7 +11,7 @@
       "enabled": true
     },
     "查莉娅": {
-      "rating": "A",
+      "rating": "A+",
       "enabled": true
     },
     "温斯顿": {
@@ -39,7 +39,7 @@
       "enabled": true
     },
     "末日铁拳": {
-      "rating": "B+",
+      "rating": "A-",
       "enabled": true
     },
     "渣客女王": {
@@ -47,7 +47,7 @@
       "enabled": true
     },
     "毛加": {
-      "rating": "A-",
+      "rating": "B+",
       "enabled": true
     },
     "骇灾": {
@@ -55,7 +55,7 @@
       "enabled": true
     },
     "D.Mon": {
-      "rating": "A-",
+      "rating": "A",
       "enabled": true
     },
     "金驭": {
@@ -63,19 +63,19 @@
       "enabled": true
     },
     "索杰恩": {
-      "rating": "A-",
+      "rating": "A",
       "enabled": true
     },
     "猎空": {
-      "rating": "B+",
+      "rating": "A",
       "enabled": true
     },
     "源氏": {
-      "rating": "B-",
+      "rating": "B+",
       "enabled": true
     },
     "半藏": {
-      "rating": "B-",
+      "rating": "C+",
       "enabled": true
     },
     "黑百合": {
@@ -83,11 +83,11 @@
       "enabled": true
     },
     "法老之鹰": {
-      "rating": "A-",
+      "rating": "A+",
       "enabled": true
     },
     "死神": {
-      "rating": "A",
+      "rating": "A-",
       "enabled": true
     },
     "士兵：76": {
@@ -99,15 +99,15 @@
       "enabled": true
     },
     "艾什": {
-      "rating": "B-",
+      "rating": "B",
       "enabled": true
     },
     "托比昂": {
-      "rating": "B-",
+      "rating": "B",
       "enabled": true
     },
     "堡垒": {
-      "rating": "B+",
+      "rating": "B",
       "enabled": true
     },
     "狂鼠": {
@@ -119,19 +119,19 @@
       "enabled": true
     },
     "回声": {
-      "rating": "B",
+      "rating": "B+",
       "enabled": true
     },
     "探奇": {
-      "rating": "B",
+      "rating": "B+",
       "enabled": true
     },
     "秩序之光": {
-      "rating": "C",
+      "rating": "B-",
       "enabled": true
     },
     "黑影": {
-      "rating": "C+",
+      "rating": "C",
       "enabled": true
     },
     "弗蕾娅": {
@@ -155,7 +155,7 @@
       "enabled": true
     },
     "埃姆雷": {
-      "rating": "B",
+      "rating": "B+",
       "enabled": true
     },
     "安娜": {
@@ -163,23 +163,23 @@
       "enabled": true
     },
     "天使": {
-      "rating": "C-",
+      "rating": "C",
       "enabled": true
     },
     "卢西奥": {
-      "rating": "C+",
+      "rating": "C-",
       "enabled": true
     },
     "禅雅塔": {
-      "rating": "B",
+      "rating": "A-",
       "enabled": true
     },
     "布丽吉塔": {
-      "rating": "B-",
+      "rating": "B",
       "enabled": true
     },
     "莫伊拉": {
-      "rating": "A-",
+      "rating": "A",
       "enabled": true
     },
     "雾子": {
@@ -187,7 +187,7 @@
       "enabled": true
     },
     "巴蒂斯特": {
-      "rating": "A",
+      "rating": "A-",
       "enabled": true
     },
     "生命之梭": {
@@ -203,11 +203,11 @@
       "enabled": true
     },
     "无漾": {
-      "rating": "B+",
+      "rating": "A",
       "enabled": true
     },
     "瑞稀": {
-      "rating": "A-",
+      "rating": "A",
       "enabled": true
     },
     "飞天猫": {
