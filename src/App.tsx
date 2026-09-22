@@ -6,7 +6,7 @@ import { cardImageFile, renderMatchCard } from "./lib/shareCard"
 import { ModeGlyph } from "./lib/modeIcon"
 import { Badge } from "./components/ui/badge"
 import { Button } from "./components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card"
 import { Checkbox } from "./components/ui/checkbox"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "./components/ui/empty"
 import {
@@ -54,17 +54,69 @@ import {
   type Tier,
 } from "./lib/game"
 
-const RULE_COPY: { key: keyof Rules; title: string }[] = [
-  { key: "rolesOnly", title: "仅分配职责" },
-  { key: "balanceRoles", title: "平衡队伍职责" },
-  { key: "balanceRatings", title: "平衡英雄评级" },
-  { key: "allowRepeat", title: "允许重复英雄" },
-  { key: "allowReroll", title: "允许重选英雄" },
-  { key: "allowPrefRoles", title: "允许偏好职责" },
-  { key: "allowPrefHeroes", title: "允许偏好英雄" },
-  { key: "allowPrefAlly", title: "允许偏好亲和" },
-  { key: "allowPrefAvoid", title: "允许偏好避免" },
+const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[] }[] = [
+  {
+    title: "对局",
+    items: [
+      { key: "rolesOnly", title: "仅分配职责" },
+      { key: "balanceRoles", title: "平衡队伍职责" },
+      { key: "balanceRatings", title: "平衡英雄评级" },
+      { key: "allowRepeat", title: "允许重复英雄" },
+      { key: "allowReroll", title: "允许重选英雄" },
+    ],
+  },
+  {
+    title: "偏好",
+    items: [
+      { key: "allowPrefRoles", title: "允许偏好职责" },
+      { key: "allowPrefHeroes", title: "允许偏好英雄" },
+      { key: "allowPrefAlly", title: "允许偏好亲和" },
+      { key: "allowPrefAvoid", title: "允许偏好避免" },
+    ],
+  },
 ]
+
+function ruleDisabled(key: keyof Rules, rules: Rules) {
+  const heroRule = key === "allowRepeat" || key === "balanceRatings" || key === "allowPrefHeroes"
+  return (heroRule && rules.rolesOnly) || (key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
+}
+
+function ruleTitle(key: keyof Rules, title: string, rules: Rules) {
+  return key === "allowReroll" && rules.rolesOnly ? "允许重选职责" : title
+}
+
+function usePrefBodyHeight(open: boolean, tick: string) {
+  const innerRef = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState<number | undefined>(undefined)
+  const [chrome, setChrome] = useState<number | undefined>(undefined)
+  const [scrollable, setScrollable] = useState(false)
+  useLayoutEffect(() => {
+    if (!open) return
+    const el = innerRef.current
+    if (!el) return
+    const apply = () => {
+      const dialog = el.closest('[role="dialog"]') as HTMLElement | null
+      const head = dialog?.querySelector("[data-pref-head]") as HTMLElement | null
+      const foot = dialog?.querySelector("[data-pref-foot]") as HTMLElement | null
+      const borders = dialog ? dialog.offsetHeight - dialog.clientHeight : 0
+      const nextChrome = (head?.offsetHeight ?? 0) + (foot?.offsetHeight ?? 0) + borders
+      const cap = Math.max(0, window.innerHeight * 0.85 - nextChrome)
+      const needed = el.scrollHeight
+      setChrome(nextChrome)
+      setHeight(needed)
+      setScrollable(cap > 0 && needed > cap + 1)
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    window.addEventListener("resize", apply)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", apply)
+    }
+  }, [open, tick])
+  return { innerRef, height, chrome, scrollable }
+}
 
 function copyToClipboard(text: string) {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
@@ -253,6 +305,135 @@ const ROLE_ICON = {
   支援: Heart,
 } as const
 
+function PrefTabs({
+  prefTab,
+  setPrefTab,
+  prefIndex,
+  roster,
+  format,
+  heroes,
+  patchRoster,
+  toggleHero,
+  togglePair,
+  prefSelectAll,
+  prefClear,
+  onDone,
+}: {
+  prefTab: string
+  setPrefTab: (value: string) => void
+  prefIndex: number
+  roster: RosterEntry[]
+  format: Format
+  heroes: Hero[]
+  patchRoster: (index: number, patch: Partial<RosterEntry>) => void
+  toggleHero: (index: number, name: string) => void
+  togglePair: (index: number, other: number, key: "ally" | "avoid") => void
+  prefSelectAll: () => void
+  prefClear: () => void
+  onDone: () => void
+}) {
+  const { innerRef, height, chrome, scrollable } = usePrefBodyHeight(true, `${prefTab}:${prefIndex}:${format}`)
+  const entry = roster[prefIndex]
+  return (
+    <Tabs value={prefTab} onValueChange={setPrefTab} className="flex min-h-0 flex-col overflow-hidden">
+      <DialogHeader className="border-b px-6 pb-4 pt-6" data-pref-head="">
+        <DialogTitle>偏好设置</DialogTitle>
+        <DialogDescription>{`设置玩家 ${resolveSeatName(entry, prefIndex)} 的偏好`}</DialogDescription>
+        <TabsList className="mt-4 grid h-8 w-full grid-cols-4 p-0.5">
+          <TabsTrigger className="h-7 px-1 sm:px-2" value="roles">职责</TabsTrigger>
+          <TabsTrigger className="h-7 px-1 sm:px-2" value="heroes">英雄</TabsTrigger>
+          <TabsTrigger className="h-7 px-1 sm:px-2" value="ally">亲和</TabsTrigger>
+          <TabsTrigger className="h-7 px-1 sm:px-2" value="avoid">避免</TabsTrigger>
+        </TabsList>
+      </DialogHeader>
+      <div
+        className={`min-h-0 motion-reduce:transition-none ${scrollable ? "overflow-y-auto" : "overflow-hidden"}`}
+        style={{
+          height,
+          maxHeight: chrome == null ? undefined : `calc(85dvh - ${chrome}px)`,
+          transition: "height 220ms ease",
+        }}
+      >
+        <div ref={innerRef}>
+          <TabsContent value="roles" className="mt-0 px-6 py-4">
+            <ToggleGroup
+              type="multiple"
+              variant="outline"
+              value={entry.roles}
+              onValueChange={(next) => patchRoster(prefIndex, { roles: next as Role[] })}
+              className="grid w-full grid-cols-3 gap-2"
+            >
+              {ALL_ROLES.map((role) => {
+                const Icon = ROLE_ICON[role]
+                return (
+                  <ToggleGroupItem key={role} value={role} className="h-16 flex-col gap-1 bg-background data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                    <Icon className="h-4 w-4" />
+                    {role}
+                  </ToggleGroupItem>
+                )
+              })}
+            </ToggleGroup>
+          </TabsContent>
+          <TabsContent value="heroes" className="mt-0 space-y-3 px-6 py-4">
+            {ALL_ROLES.map((role) => {
+              const list = heroes.filter((hero) => hero.role === role)
+              const muted = entry.roles.length > 0 && entry.roles.indexOf(role) < 0
+              return (
+                <section key={role}>
+                  <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {list.map((hero) => {
+                      const id = `pref-hero-${prefIndex}-${hero.name}`
+                      const checked = entry.heroNone !== true && (entry.heroes.length === 0 || entry.heroes.includes(hero.name))
+                      return (
+                        <label
+                          key={hero.name}
+                          htmlFor={id}
+                          className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""}`}
+                        >
+                          <Checkbox id={id} checked={checked} onCheckedChange={() => toggleHero(prefIndex, hero.name)} />
+                          <span className="truncate text-sm">{hero.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
+          </TabsContent>
+          {(["ally", "avoid"] as const).map((key) => (
+            <TabsContent key={key} value={key} className="mt-0 px-6 py-4">
+              {roster.slice(0, format * 2).some((row, index) => index !== prefIndex && row.open) ? (
+                <div className="space-y-1">
+                  {roster.slice(0, format * 2).map((row, index) => {
+                    if (index === prefIndex || !row.open) return null
+                    const id = `${key}-${prefIndex}-${index}`
+                    return (
+                      <label key={index} htmlFor={id} className="flex h-9 cursor-pointer items-center gap-3 rounded-md border px-3">
+                        <Checkbox id={id} checked={entry[key].includes(index)} onCheckedChange={() => togglePair(prefIndex, index, key)} />
+                        <span className="truncate text-sm">{resolveSeatName(row, index)}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
+              )}
+            </TabsContent>
+          ))}
+        </div>
+      </div>
+      <DialogFooter className="flex-row items-center justify-between gap-2 space-x-0 border-t px-6 py-4 sm:justify-between" data-pref-foot="">
+        <div className="flex gap-1">
+          <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefSelectAll}>全选</Button>
+          <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefClear}>清空</Button>
+        </div>
+        <Button size="sm" className="h-8 min-w-20 px-5" onClick={onDone}>完成</Button>
+      </DialogFooter>
+    </Tabs>
+  )
+}
+
 function ResultPlaceholder({ format }: { format: Format }) {
   const rows = Array.from({ length: format }, (_, index) => index)
   return (
@@ -301,6 +482,7 @@ export default function App() {
   const [maps, setMaps] = useState<GameMap[]>(boot.maps)
   const [collapsedHeroes, setCollapsedHeroes] = useState(saved?.collapsed ?? true)
   const [collapsedMaps, setCollapsedMaps] = useState(saved?.collapsedMaps ?? saved?.collapsed ?? true)
+  const [collapsedRules, setCollapsedRules] = useState(saved?.collapsedRules ?? true)
   const [match, setMatch] = useState<Match | null>(null)
   const [poolOpen, setPoolOpen] = useState(false)
   const [poolTab, setPoolTab] = useState<"heroes" | "maps">("heroes")
@@ -363,11 +545,12 @@ export default function App() {
       rules,
       collapsed: collapsedHeroes,
       collapsedMaps,
+      collapsedRules,
       poolVersion: POOL_VERSION,
       heroes: Object.fromEntries(heroes.map((hero) => [hero.name, { enabled: hero.enabled, rating: hero.rating }])),
       maps: Object.fromEntries(maps.map((map) => [map.name, map.enabled])),
     })
-  }, [format, roster, rules, collapsedHeroes, collapsedMaps, heroes, maps])
+  }, [format, roster, rules, collapsedHeroes, collapsedMaps, collapsedRules, heroes, maps])
 
   const heroOn = heroes.filter((hero) => hero.enabled).length
   const mapOn = maps.filter((map) => map.enabled).length
@@ -570,8 +753,8 @@ export default function App() {
 
       <Card>
         <SectionHead
-          title="设置"
-          hint="设置玩家名单与规则"
+          title="玩家"
+          hint="添加玩家名称与偏好"
           pin={(
             <Tabs value={String(format)} onValueChange={(value) => switchFormat(Number(value) as Format)}>
               <TabsList className="h-8 p-0.5">
@@ -614,24 +797,6 @@ export default function App() {
             </div>
           ))}
         </CardContent>
-        <CardFooter className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
-          {RULE_COPY.map((item) => {
-            const heroRule = item.key === "allowRepeat" || item.key === "balanceRatings" || item.key === "allowPrefHeroes"
-            const disabled = (heroRule && rules.rolesOnly) || (item.key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
-            const title = item.key === "allowReroll" && rules.rolesOnly ? "允许重选职责" : item.title
-            return (
-            <div key={item.key} className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${disabled ? "opacity-50" : ""}`}>
-              <Label htmlFor={item.key} className="text-sm font-normal">{title}</Label>
-              <Switch
-                id={item.key}
-                checked={disabled ? false : rules[item.key]}
-                disabled={disabled}
-                onCheckedChange={(value) => setRule(item.key, value)}
-              />
-            </div>
-            )
-          })}
-        </CardFooter>
       </Card>
 
       <Card>
@@ -713,6 +878,46 @@ export default function App() {
                 </div>
               )
             })}
+          </CardContent>
+        )}
+      </Card>
+
+      <Card>
+        <SectionHead
+          title="规则"
+          hint="设置对局规则"
+          pinEnd
+          pin={(
+            <Button variant="outline" size="sm" className="h-8" onClick={() => setCollapsedRules((v) => !v)}>
+              {collapsedRules ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              {collapsedRules ? "展开" : "收起"}
+            </Button>
+          )}
+        />
+        {collapsedRules ? null : (
+          <CardContent className="grid gap-6 sm:grid-cols-2">
+            {RULE_GROUPS.map((group) => (
+              <div key={group.title} className="min-w-0">
+                <div className="mb-2 text-xs text-muted-foreground">{group.title}</div>
+                <div className="divide-y rounded-lg border">
+                  {group.items.map((item) => {
+                    const disabled = ruleDisabled(item.key, rules)
+                    const title = ruleTitle(item.key, item.title, rules)
+                    return (
+                      <div key={item.key} className={`flex items-center justify-between gap-3 px-3 py-2 ${disabled ? "opacity-50" : ""}`}>
+                        <Label htmlFor={item.key} className="text-sm font-normal">{title}</Label>
+                        <Switch
+                          id={item.key}
+                          checked={disabled ? false : rules[item.key]}
+                          disabled={disabled}
+                          onCheckedChange={(value) => setRule(item.key, value)}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </CardContent>
         )}
       </Card>
@@ -938,113 +1143,26 @@ export default function App() {
       </Dialog>
 
       <Dialog open={prefIndex !== null} onOpenChange={(open) => { if (!open) setPrefIndex(null) }}>
-        <DialogContent className="flex max-h-[85dvh] flex-col gap-4 overflow-hidden p-5 sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>偏好设置</DialogTitle>
-            <DialogDescription>
-              {prefIndex !== null ? `设置玩家 ${resolveSeatName(roster[prefIndex], prefIndex)} 的偏好` : "设置玩家偏好"}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0">
           {prefIndex !== null && roster[prefIndex] ? (
-            <Tabs value={prefTab} onValueChange={setPrefTab} className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="grid h-8 w-full grid-cols-4 p-0.5">
-                <TabsTrigger className="h-7 px-1 sm:px-2" value="roles">职责</TabsTrigger>
-                <TabsTrigger className="h-7 px-1 sm:px-2" value="heroes">英雄</TabsTrigger>
-                <TabsTrigger className="h-7 px-1 sm:px-2" value="ally">亲和</TabsTrigger>
-                <TabsTrigger className="h-7 px-1 sm:px-2" value="avoid">避免</TabsTrigger>
-              </TabsList>
-              <TabsContent value="roles" className="mt-4">
-                <ToggleGroup
-                  type="multiple"
-                  variant="outline"
-                  value={roster[prefIndex].roles}
-                  onValueChange={(next) => patchRoster(prefIndex, { roles: next as Role[] })}
-                  className="grid w-full grid-cols-3 gap-2"
-                >
-                  {ALL_ROLES.map((role) => {
-                    const Icon = ROLE_ICON[role]
-                    return (
-                      <ToggleGroupItem key={role} value={role} className="h-16 flex-col gap-1 bg-background data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                        <Icon className="h-4 w-4" />
-                        {role}
-                      </ToggleGroupItem>
-                    )
-                  })}
-                </ToggleGroup>
-              </TabsContent>
-              <TabsContent value="heroes" className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
-                <ScrollArea className="h-[min(50dvh,24rem)]">
-                  <div className="space-y-4 pr-3">
-                    {ALL_ROLES.map((role) => {
-                      const list = heroes.filter((hero) => hero.role === role)
-                      const muted = roster[prefIndex].roles.length > 0 && !roster[prefIndex].roles.includes(role)
-                      return (
-                        <section key={role}>
-                          <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
-                          <div className="grid grid-cols-2 gap-1">
-                            {list.map((hero) => {
-                              const id = `pref-hero-${prefIndex}-${hero.name}`
-                              const checked = !roster[prefIndex].heroNone && (!roster[prefIndex].heroes.length || roster[prefIndex].heroes.includes(hero.name))
-                              return (
-                                <label
-                                  key={hero.name}
-                                  htmlFor={id}
-                                  className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""}`}
-                                >
-                                  <Checkbox
-                                    id={id}
-                                    checked={checked}
-                                    onCheckedChange={() => toggleHero(prefIndex, hero.name)}
-                                  />
-                                  <span className="truncate text-sm">{hero.name}</span>
-                                </label>
-                              )
-                            })}
-                          </div>
-                        </section>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-              {(["ally", "avoid"] as const).map((key) => (
-                <TabsContent key={key} value={key} className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
-                  {roster.slice(0, format * 2).some((entry, index) => index !== prefIndex && entry.open) ? (
-                    <ScrollArea className="h-[min(50dvh,24rem)]">
-                      <div className="space-y-1 pr-3">
-                        {roster.slice(0, format * 2).map((entry, index) => {
-                          if (index === prefIndex || !entry.open) return null
-                          const id = `${key}-${prefIndex}-${index}`
-                          return (
-                            <label key={index} htmlFor={id} className="flex h-9 cursor-pointer items-center gap-3 rounded-md border px-3">
-                              <Checkbox
-                                id={id}
-                                checked={roster[prefIndex][key].includes(index)}
-                                onCheckedChange={() => togglePair(prefIndex, index, key)}
-                              />
-                              <span className="truncate text-sm">{resolveSeatName(entry, index)}</span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </ScrollArea>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
-                  )}
-                </TabsContent>
-              ))}
-            </Tabs>
+            <PrefTabs
+              prefTab={prefTab}
+              setPrefTab={setPrefTab}
+              prefIndex={prefIndex}
+              roster={roster}
+              format={format}
+              heroes={heroes}
+              patchRoster={patchRoster}
+              toggleHero={toggleHero}
+              togglePair={togglePair}
+              prefSelectAll={prefSelectAll}
+              prefClear={prefClear}
+              onDone={() => {
+                setPrefIndex(null)
+                showOk("已保存偏好设置")
+              }}
+            />
           ) : null}
-          <DialogFooter className="flex-row items-center justify-between gap-2 space-x-0 sm:justify-between">
-            <div className="flex gap-1">
-              <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefSelectAll}>全选</Button>
-              <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefClear}>清空</Button>
-            </div>
-            <Button size="sm" className="h-8 min-w-20 px-5" onClick={() => {
-              setPrefIndex(null)
-              showOk("已保存偏好设置")
-            }}>完成</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

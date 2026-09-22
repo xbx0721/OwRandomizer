@@ -174,6 +174,7 @@ export type SavedState = {
   maps: Record<string, boolean>
   collapsed: boolean
   collapsedMaps?: boolean
+  collapsedRules?: boolean
 }
 
 export function shuffle<T>(items: T[]): T[] {
@@ -547,6 +548,7 @@ export function loadSaved(): SavedState | null {
       maps: data.maps || {},
       collapsed: Boolean(data.collapsed),
       collapsedMaps: typeof data.collapsedMaps === "boolean" ? data.collapsedMaps : undefined,
+      collapsedRules: typeof data.collapsedRules === "boolean" ? data.collapsedRules : undefined,
     }
   } catch {
     return null
