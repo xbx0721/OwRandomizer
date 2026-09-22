@@ -62,6 +62,7 @@ const RULE_COPY: { key: keyof Rules; title: string }[] = [
   { key: "allowReroll", title: "允许重选英雄" },
   { key: "allowPrefRoles", title: "允许偏好职责" },
   { key: "allowPrefHeroes", title: "允许偏好英雄" },
+  { key: "allowPrefAlly", title: "允许偏好亲和" },
   { key: "allowPrefAvoid", title: "允许偏好避免" },
 ]
 
@@ -402,19 +403,27 @@ export default function App() {
   function vacateSeat(index: number) {
     setRoster((prev) => prev.map((entry, i) => {
       if (i === index) return emptySeat()
-      if (!entry.avoid.includes(index)) return entry
-      return { ...entry, avoid: entry.avoid.filter((item) => item !== index) }
+      return {
+        ...entry,
+        ally: entry.ally.filter((item) => item !== index),
+        avoid: entry.avoid.filter((item) => item !== index),
+      }
     }))
     if (prefIndex === index) setPrefIndex(null)
   }
 
-  function toggleAvoid(index: number, other: number) {
+  function togglePair(index: number, other: number, key: "ally" | "avoid") {
     if (index === other) return
+    const flip = key === "ally" ? "avoid" : "ally"
     setRoster((prev) => prev.map((entry, i) => {
       if (i !== index && i !== other) return entry
       const target = i === index ? other : index
-      const on = entry.avoid.includes(target)
-      return { ...entry, avoid: on ? entry.avoid.filter((item) => item !== target) : [...entry.avoid, target] }
+      const on = entry[key].includes(target)
+      return {
+        ...entry,
+        [key]: on ? entry[key].filter((item) => item !== target) : [...entry[key], target],
+        [flip]: entry[flip].filter((item) => item !== target),
+      }
     }))
   }
 
@@ -422,12 +431,46 @@ export default function App() {
     const all = heroes.map((hero) => hero.name)
     setRoster((prev) => prev.map((entry, i) => {
       if (i !== index) return entry
-      const current = entry.heroes.length ? entry.heroes : all
+      const current = entry.heroNone ? [] : entry.heroes.length ? entry.heroes : all
       const on = current.includes(name)
       const next = on ? current.filter((item) => item !== name) : [...current, name]
-      if (!next.length) return entry
-      return { ...entry, heroes: all.every((item) => next.includes(item)) ? [] : next }
+      if (!next.length) return { ...entry, heroes: [], heroNone: true }
+      if (all.every((item) => next.includes(item))) return { ...entry, heroes: [], heroNone: false }
+      return { ...entry, heroes: next, heroNone: false }
     }))
+  }
+
+  function prefSelectAll() {
+    if (prefIndex === null) return
+    const others = roster.slice(0, format * 2).map((_, index) => index).filter((index) => index !== prefIndex && roster[index].open)
+    if (prefTab === "roles") patchRoster(prefIndex, { roles: [...ALL_ROLES] })
+    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: false })
+    else if (prefTab === "ally" || prefTab === "avoid") {
+      const flip = prefTab === "ally" ? "avoid" : "ally"
+      setRoster((prev) => prev.map((entry, i) => {
+        if (i === prefIndex) return { ...entry, [prefTab]: others, [flip]: entry[flip].filter((item) => !others.includes(item)) }
+        if (!others.includes(i)) return entry
+        const onSelf = entry[prefTab].includes(prefIndex)
+        return {
+          ...entry,
+          [prefTab]: onSelf ? entry[prefTab] : [...entry[prefTab], prefIndex],
+          [flip]: entry[flip].filter((item) => item !== prefIndex),
+        }
+      }))
+    }
+  }
+
+  function prefClear() {
+    if (prefIndex === null) return
+    if (prefTab === "roles") patchRoster(prefIndex, { roles: [] })
+    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: true })
+    else if (prefTab === "ally" || prefTab === "avoid") {
+      setRoster((prev) => prev.map((entry, i) => {
+        if (i === prefIndex) return { ...entry, [prefTab]: [] }
+        if (!entry[prefTab].includes(prefIndex)) return entry
+        return { ...entry, [prefTab]: entry[prefTab].filter((item) => item !== prefIndex) }
+      }))
+    }
   }
 
   function patchRoster(index: number, patch: Partial<RosterEntry>) {
@@ -904,19 +947,18 @@ export default function App() {
           </DialogHeader>
           {prefIndex !== null && roster[prefIndex] ? (
             <Tabs value={prefTab} onValueChange={setPrefTab} className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="grid h-8 w-full grid-cols-3 p-0.5">
-                <TabsTrigger className="h-7 px-2" value="roles">职责</TabsTrigger>
-                <TabsTrigger className="h-7 px-2" value="heroes">英雄</TabsTrigger>
-                <TabsTrigger className="h-7 px-2" value="avoid">避免</TabsTrigger>
+              <TabsList className="grid h-8 w-full grid-cols-4 p-0.5">
+                <TabsTrigger className="h-7 px-1 sm:px-2" value="roles">职责</TabsTrigger>
+                <TabsTrigger className="h-7 px-1 sm:px-2" value="heroes">英雄</TabsTrigger>
+                <TabsTrigger className="h-7 px-1 sm:px-2" value="ally">亲和</TabsTrigger>
+                <TabsTrigger className="h-7 px-1 sm:px-2" value="avoid">避免</TabsTrigger>
               </TabsList>
               <TabsContent value="roles" className="mt-4">
                 <ToggleGroup
                   type="multiple"
                   variant="outline"
                   value={roster[prefIndex].roles}
-                  onValueChange={(next) => {
-                    if (next.length) patchRoster(prefIndex, { roles: next as Role[] })
-                  }}
+                  onValueChange={(next) => patchRoster(prefIndex, { roles: next as Role[] })}
                   className="grid w-full grid-cols-3 gap-2"
                 >
                   {ALL_ROLES.map((role) => {
@@ -935,14 +977,14 @@ export default function App() {
                   <div className="space-y-4 pr-3">
                     {ALL_ROLES.map((role) => {
                       const list = heroes.filter((hero) => hero.role === role)
-                      const muted = !roster[prefIndex].roles.includes(role)
+                      const muted = roster[prefIndex].roles.length > 0 && !roster[prefIndex].roles.includes(role)
                       return (
                         <section key={role}>
                           <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
                           <div className="grid grid-cols-2 gap-1">
                             {list.map((hero) => {
                               const id = `pref-hero-${prefIndex}-${hero.name}`
-                              const checked = !roster[prefIndex].heroes.length || roster[prefIndex].heroes.includes(hero.name)
+                              const checked = !roster[prefIndex].heroNone && (!roster[prefIndex].heroes.length || roster[prefIndex].heroes.includes(hero.name))
                               return (
                                 <label
                                   key={hero.name}
@@ -965,34 +1007,40 @@ export default function App() {
                   </div>
                 </ScrollArea>
               </TabsContent>
-              <TabsContent value="avoid" className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
-                {roster.slice(0, format * 2).some((entry, index) => index !== prefIndex && entry.open) ? (
-                  <ScrollArea className="h-[min(50dvh,24rem)]">
-                    <div className="space-y-1 pr-3">
-                      {roster.slice(0, format * 2).map((entry, index) => {
-                        if (index === prefIndex || !entry.open) return null
-                        const id = `avoid-${prefIndex}-${index}`
-                        return (
-                          <label key={index} htmlFor={id} className="flex h-9 cursor-pointer items-center gap-3 rounded-md border px-3">
-                            <Checkbox
-                              id={id}
-                              checked={roster[prefIndex].avoid.includes(index)}
-                              onCheckedChange={() => toggleAvoid(prefIndex, index)}
-                            />
-                            <span className="truncate text-sm">{resolveSeatName(entry, index)}</span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
-                )}
-              </TabsContent>
+              {(["ally", "avoid"] as const).map((key) => (
+                <TabsContent key={key} value={key} className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
+                  {roster.slice(0, format * 2).some((entry, index) => index !== prefIndex && entry.open) ? (
+                    <ScrollArea className="h-[min(50dvh,24rem)]">
+                      <div className="space-y-1 pr-3">
+                        {roster.slice(0, format * 2).map((entry, index) => {
+                          if (index === prefIndex || !entry.open) return null
+                          const id = `${key}-${prefIndex}-${index}`
+                          return (
+                            <label key={index} htmlFor={id} className="flex h-9 cursor-pointer items-center gap-3 rounded-md border px-3">
+                              <Checkbox
+                                id={id}
+                                checked={roster[prefIndex][key].includes(index)}
+                                onCheckedChange={() => togglePair(prefIndex, index, key)}
+                              />
+                              <span className="truncate text-sm">{resolveSeatName(entry, index)}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
+                  )}
+                </TabsContent>
+              ))}
             </Tabs>
           ) : null}
-          <DialogFooter className="sm:justify-stretch">
-            <Button size="sm" className="h-8 w-full" onClick={() => {
+          <DialogFooter className="flex-row items-center justify-between gap-2 space-x-0 sm:justify-between">
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefSelectAll}>全选</Button>
+              <Button variant="outline" size="sm" className="h-8 px-3" onClick={prefClear}>清空</Button>
+            </div>
+            <Button size="sm" className="h-8 min-w-20 px-5" onClick={() => {
               setPrefIndex(null)
               showOk("已保存偏好设置")
             }}>完成</Button>
