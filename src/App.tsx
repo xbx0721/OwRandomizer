@@ -248,6 +248,42 @@ const ROLE_ICON = {
   支援: Heart,
 } as const
 
+function ResultPlaceholder({ format }: { format: Format }) {
+  const rows = Array.from({ length: format }, (_, index) => index)
+  return (
+    <div className="space-y-4" aria-hidden>
+      <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+        <div className="h-5 w-5 shrink-0" />
+        <div className="text-xl font-semibold leading-normal">&nbsp;</div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {(["blue", "red"] as const).map((side) => (
+          <div
+            key={side}
+            className={`overflow-hidden rounded-lg border ${side === "blue" ? "border-l-4 border-l-blue" : "hidden border-l-4 border-l-red md:block"}`}
+          >
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="font-display text-base font-semibold leading-normal">&nbsp;</div>
+              <span className="text-sm leading-normal">&nbsp;</span>
+            </div>
+            <ul>
+              {rows.map((row) => (
+                <li key={row} className="flex items-center gap-3 border-t px-4 py-2.5">
+                  <span className="h-10 w-10 shrink-0 rounded-md border" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium leading-normal">&nbsp;</span>
+                    <span className="block text-xs leading-normal">&nbsp;</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const saved = useMemo(() => loadSaved(), [])
   const boot = useMemo(() => hydrateCatalogs(saved), [saved])
@@ -721,10 +757,10 @@ export default function App() {
               ) : null}
             </div>
           ) : (
-            <Empty
+            <div
               role="button"
               tabIndex={0}
-              className="cursor-pointer border p-8 transition-colors hover:bg-muted/40 md:p-8"
+              className="relative cursor-pointer"
               onClick={deal}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -733,21 +769,28 @@ export default function App() {
                 }
               }}
             >
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Shuffle />
-                </EmptyMedia>
-                <EmptyTitle>暂无对局</EmptyTitle>
-              </EmptyHeader>
-            </Empty>
+              <div className="pointer-events-none invisible">
+                <ResultPlaceholder format={format} />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center rounded-lg border transition-colors hover:bg-muted/40">
+                <Empty className="border-0 p-0 md:p-0">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Shuffle />
+                    </EmptyMedia>
+                    <EmptyTitle>暂无对局</EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
 
 
       <Dialog open={poolOpen} onOpenChange={setPoolOpen}>
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden p-0">
-          <div className="grid h-[min(85vh,720px)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+        <DialogContent className="flex h-[85dvh] max-h-[85dvh] w-[calc(100%-2rem)] max-w-4xl flex-col overflow-hidden p-0">
+          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
           <DialogHeader className="px-6 pb-4 pt-6">
             <DialogTitle>{poolTab === "maps" ? "地图" : "英雄"}</DialogTitle>
             <DialogDescription>
@@ -952,7 +995,7 @@ export default function App() {
           return null
         })
       }}>
-        <DialogContent className="max-w-sm gap-3 p-5 sm:max-w-md">
+        <DialogContent className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-md gap-3 overflow-hidden p-5">
           <DialogHeader>
             <DialogTitle>卡片分享</DialogTitle>
             <DialogDescription>长按卡片保存或分享</DialogDescription>
@@ -961,7 +1004,7 @@ export default function App() {
             <img
               src={shareUrl}
               alt="对局卡片"
-              className="w-full select-auto rounded-md"
+              className="max-h-[min(70dvh,32rem)] w-full select-auto rounded-md object-contain"
               style={{ WebkitTouchCallout: "default" }}
             />
           ) : null}
