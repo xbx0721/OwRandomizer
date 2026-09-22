@@ -22,7 +22,7 @@ import { Label } from "./components/ui/label"
 import { ScrollArea } from "./components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select"
 import { Switch } from "./components/ui/switch"
-import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group"
 import {
   ALL_ROLES,
@@ -254,6 +254,7 @@ export default function App() {
   const [format, setFormat] = useState<Format>(() => saved?.format === 6 ? 6 : 5)
   const [roster, setRoster] = useState<RosterEntry[]>(() => padRoster(saved?.roster ?? []))
   const [prefIndex, setPrefIndex] = useState<number | null>(null)
+  const [prefTab, setPrefTab] = useState("roles")
   const [rules, setRules] = useState<Rules>(() => ({ ...defaultRules(), ...saved?.rules }))
   const [heroes, setHeroes] = useState<Hero[]>(boot.heroes)
   const [maps, setMaps] = useState<GameMap[]>(boot.maps)
@@ -374,6 +375,18 @@ export default function App() {
       const target = i === index ? other : index
       const on = entry.avoid.includes(target)
       return { ...entry, avoid: on ? entry.avoid.filter((item) => item !== target) : [...entry.avoid, target] }
+    }))
+  }
+
+  function toggleHero(index: number, name: string) {
+    const all = heroes.map((hero) => hero.name)
+    setRoster((prev) => prev.map((entry, i) => {
+      if (i !== index) return entry
+      const current = entry.heroes.length ? entry.heroes : all
+      const on = current.includes(name)
+      const next = on ? current.filter((item) => item !== name) : [...current, name]
+      if (!next.length) return entry
+      return { ...entry, heroes: all.every((item) => next.includes(item)) ? [] : next }
     }))
   }
 
@@ -502,7 +515,7 @@ export default function App() {
                     className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
                     onChange={(event) => patchRoster(index, { name: event.target.value })}
                   />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`设置玩家 ${resolveSeatName(entry, index)} 的偏好`} onClick={() => setPrefIndex(index)}>
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`设置玩家 ${resolveSeatName(entry, index)} 的偏好`} onClick={() => { setPrefTab("roles"); setPrefIndex(index) }}>
                     <Settings2 className="h-4 w-4" />
                   </Button>
                   <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" aria-label={`移除玩家 ${resolveSeatName(entry, index)}`} onClick={() => vacateSeat(index)}>
@@ -674,7 +687,7 @@ export default function App() {
                                 <span className="text-xs text-muted-foreground">{player.hero} · {player.role} · {hero?.rating}</span>
                               </span>
                               {rules.allowReroll ? (
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的英雄`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex))}>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的英雄`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster))}>
                                   <RotateCw className="h-4 w-4" />
                                 </Button>
                               ) : null}
@@ -827,7 +840,7 @@ export default function App() {
       </Dialog>
 
       <Dialog open={prefIndex !== null} onOpenChange={(open) => { if (!open) setPrefIndex(null) }}>
-        <DialogContent className="gap-4 p-5 sm:max-w-md">
+        <DialogContent className="flex max-h-[85dvh] flex-col gap-4 overflow-hidden p-5 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>偏好设置</DialogTitle>
             <DialogDescription>
@@ -835,9 +848,13 @@ export default function App() {
             </DialogDescription>
           </DialogHeader>
           {prefIndex !== null && roster[prefIndex] ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>职责</Label>
+            <Tabs value={prefTab} onValueChange={setPrefTab} className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="grid h-8 w-full grid-cols-3 p-0.5">
+                <TabsTrigger className="h-7 px-2" value="roles">职责</TabsTrigger>
+                <TabsTrigger className="h-7 px-2" value="heroes">英雄</TabsTrigger>
+                <TabsTrigger className="h-7 px-2" value="avoid">避免</TabsTrigger>
+              </TabsList>
+              <TabsContent value="roles" className="mt-4">
                 <ToggleGroup
                   type="multiple"
                   variant="outline"
@@ -857,11 +874,45 @@ export default function App() {
                     )
                   })}
                 </ToggleGroup>
-              </div>
-              <div className="space-y-2">
-                <Label>避免同队</Label>
+              </TabsContent>
+              <TabsContent value="heroes" className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
+                <ScrollArea className="h-[min(50dvh,24rem)]">
+                  <div className="space-y-4 pr-3">
+                    {ALL_ROLES.map((role) => {
+                      const list = heroes.filter((hero) => hero.role === role)
+                      const muted = !roster[prefIndex].roles.includes(role)
+                      return (
+                        <section key={role}>
+                          <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
+                          <div className="grid grid-cols-2 gap-1">
+                            {list.map((hero) => {
+                              const id = `pref-hero-${prefIndex}-${hero.name}`
+                              const checked = !roster[prefIndex].heroes.length || roster[prefIndex].heroes.includes(hero.name)
+                              return (
+                                <label
+                                  key={hero.name}
+                                  htmlFor={id}
+                                  className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""}`}
+                                >
+                                  <Checkbox
+                                    id={id}
+                                    checked={checked}
+                                    onCheckedChange={() => toggleHero(prefIndex, hero.name)}
+                                  />
+                                  <span className="truncate text-sm">{hero.name}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </section>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+              <TabsContent value="avoid" className="mt-4 min-h-0 data-[state=active]:flex data-[state=active]:flex-1 data-[state=active]:flex-col">
                 {roster.slice(0, format * 2).some((entry, index) => index !== prefIndex && entry.open) ? (
-                  <ScrollArea className="h-48">
+                  <ScrollArea className="h-[min(50dvh,24rem)]">
                     <div className="space-y-1 pr-3">
                       {roster.slice(0, format * 2).map((entry, index) => {
                         if (index === prefIndex || !entry.open) return null
@@ -882,8 +933,8 @@ export default function App() {
                 ) : (
                   <p className="text-sm text-muted-foreground">添加其他玩家后可选择</p>
                 )}
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           ) : null}
           <DialogFooter className="sm:justify-stretch">
             <Button size="sm" className="h-8 w-full" onClick={() => {
