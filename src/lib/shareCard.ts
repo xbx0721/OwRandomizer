@@ -70,9 +70,12 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
   ctx.fillText(`${match.format}v${match.format}  ·  ${match.map.name}  ·  ${match.map.mode}`, W - PAD, PAD + 32)
   ctx.textAlign = "left"
   const colW = (W - PAD * 2 - GAP) / 2
-  const portraits = await Promise.all(
-    match.teams.flatMap((team) => team.map((player) => loadPortrait(heroByName(heroes, player.hero)))),
-  )
+  const portraits = match.rolesOnly
+    ? []
+    : await Promise.all(
+      match.teams.flatMap((team) => team.map((player) => loadPortrait(heroByName(heroes, player.hero)))),
+    )
+  const roleFill: Record<string, string> = { 坦克: "#c9a227", 输出: "#c45c56", 支援: "#3d9a8c" }
 
   match.teams.forEach((team, teamIndex) => {
     const x = PAD + teamIndex * (colW + GAP)
@@ -88,11 +91,13 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
     ctx.fillStyle = INK
     ctx.font = "600 16px \"Noto Sans SC\", sans-serif"
     ctx.fillText(teamIndex === 0 ? "蓝队" : "红队", x + 16, y + 28)
-    ctx.fillStyle = MUTED
-    ctx.font = "400 13px \"Noto Sans SC\", sans-serif"
-    ctx.textAlign = "right"
-    ctx.fillText(`${teamScore(heroes, team)}分`, x + colW - 16, y + 28)
-    ctx.textAlign = "left"
+    if (!match.rolesOnly) {
+      ctx.fillStyle = MUTED
+      ctx.font = "400 13px \"Noto Sans SC\", sans-serif"
+      ctx.textAlign = "right"
+      ctx.fillText(`${teamScore(heroes, team)}分`, x + colW - 16, y + 28)
+      ctx.textAlign = "left"
+    }
 
     team.forEach((player, index) => {
       const py = y + TEAM_HEAD + index * ROW
@@ -105,14 +110,19 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
       const imgX = x + 12
       const imgY = py + 8
       const imgS = 40
-      const portrait = portraits[teamIndex * rows + index]
       ctx.save()
       roundRect(ctx, imgX, imgY, imgS, imgS, 6)
       ctx.clip()
-      if (portrait) ctx.drawImage(portrait, imgX, imgY, imgS, imgS)
-      else {
-        ctx.fillStyle = LINE
+      if (match.rolesOnly) {
+        ctx.fillStyle = roleFill[player.role] ?? LINE
         ctx.fillRect(imgX, imgY, imgS, imgS)
+      } else {
+        const portrait = portraits[teamIndex * rows + index]
+        if (portrait) ctx.drawImage(portrait, imgX, imgY, imgS, imgS)
+        else {
+          ctx.fillStyle = LINE
+          ctx.fillRect(imgX, imgY, imgS, imgS)
+        }
       }
       ctx.restore()
 
@@ -121,10 +131,10 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
       ctx.fillStyle = INK
       ctx.font = "500 14px \"Noto Sans SC\", sans-serif"
       ctx.fillText(ellipsis(ctx, player.name, max), textX, py + 24)
-      const hero = heroByName(heroes, player.hero)
       ctx.fillStyle = MUTED
       ctx.font = "400 12px \"Noto Sans SC\", sans-serif"
-      ctx.fillText(ellipsis(ctx, `${player.hero} · ${player.role}${hero ? ` · ${hero.rating}` : ""}`, max), textX, py + 42)
+      const sub = match.rolesOnly ? player.role : `${player.hero} · ${player.role}${heroByName(heroes, player.hero) ? ` · ${heroByName(heroes, player.hero)?.rating}` : ""}`
+      ctx.fillText(ellipsis(ctx, sub, max), textX, py + 42)
     })
   })
 

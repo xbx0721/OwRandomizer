@@ -10,6 +10,7 @@ export type Rules = {
   allowRepeat: boolean
   allowReroll: boolean
   balanceRatings: boolean
+  rolesOnly: boolean
 }
 export type AuditItem = {
   time: string
@@ -22,6 +23,7 @@ export type Match = {
   map: GameMap
   teams: [Team, Team]
   audit: AuditItem[]
+  rolesOnly: boolean
 }
 
 export const ALL_ROLES: Role[] = ["坦克", "输出", "支援"]
@@ -113,8 +115,9 @@ export function allowedHeroNames(entry: RosterEntry): Set<string> | null {
   return entry.heroes.length ? new Set(entry.heroes) : null
 }
 
-export function entryCanTakeRole(entry: RosterEntry, role: Role, heroes: Hero[]): boolean {
+export function entryCanTakeRole(entry: RosterEntry, role: Role, heroes: Hero[], ignoreHeroes = false): boolean {
   if (!allowedRoles(entry).includes(role)) return false
+  if (ignoreHeroes) return true
   const allow = allowedHeroNames(entry)
   return heroPool(heroes).some((hero) => hero.role === role && (!allow || allow.has(hero.name)))
 }
@@ -137,6 +140,7 @@ export const defaultRules = (): Rules => ({
   allowRepeat: false,
   allowReroll: false,
   balanceRatings: true,
+  rolesOnly: false,
 })
 
 export type SavedState = {
@@ -201,11 +205,12 @@ function nowTime() {
 }
 
 export function poolError(heroes: Hero[], maps: GameMap[], rules: Rules, format: Format): string | null {
+  if (!mapPool(maps).length) return "请至少选择一张地图"
+  if (rules.rolesOnly) return null
   const pool = heroPool(heroes)
   const count = (role: Role) => pool.filter((hero) => hero.role === role).length
   const need = roleNeed(format)
   const copies = rules.allowRepeat ? 1 : 2
-  if (!mapPool(maps).length) return "请至少选择一张地图"
   if (!pool.length) return "请至少选择一名英雄"
   if (rules.balanceRoles && (count("坦克") < need.坦克 * copies || count("输出") < need.输出 * copies || count("支援") < need.支援 * copies)) {
     const hint = rules.allowRepeat ? "队伍位置平衡时" : "队伍位置平衡且英雄不重复时"
@@ -240,7 +245,7 @@ function pickHero(
   return randomItem(candidates)
 }
 
-function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolean, heroes: Hero[]): { team: 0 | 1; role: Role; entry: RosterEntry }[] | null {
+function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolean, heroes: Hero[], ignoreHeroes = false): { team: 0 | 1; role: Role; entry: RosterEntry }[] | null {
   const people = shuffle(roster.map((entry, index) => ({ entry, index })))
   const slots: { team: 0 | 1; role: Role | null }[] = []
   if (balanceRoles) {
@@ -261,8 +266,8 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
       if (used[slot]) return false
       const need = slots[slot].role
       if (need) {
-        if (!entryCanTakeRole(entry, need, heroes)) return false
-      } else if (!allowedRoles(entry).some((role) => entryCanTakeRole(entry, role, heroes))) {
+        if (!entryCanTakeRole(entry, need, heroes, ignoreHeroes)) return false
+      } else if (!allowedRoles(entry).some((role) => entryCanTakeRole(entry, role, heroes, ignoreHeroes))) {
         return false
       }
       const team = slots[slot].team
@@ -285,7 +290,7 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
   if (!walk(0)) return null
   return people.map((person, index) => {
     const need = slots[pick[index]].role
-    const fallback = allowedRoles(person.entry).filter((role) => entryCanTakeRole(person.entry, role, heroes))
+    const fallback = allowedRoles(person.entry).filter((role) => entryCanTakeRole(person.entry, role, heroes, ignoreHeroes))
     return {
       team: slots[pick[index]].team,
       role: need ?? randomItem(fallback.length ? fallback : allowedRoles(person.entry)),
@@ -326,6 +331,24 @@ function fillHeroes(
   return teams
 }
 
+function fillRoles(
+  seats: { team: 0 | 1; role: Role; entry: RosterEntry }[],
+  format: Format,
+): [Team, Team] {
+  const size = format
+  const teams: [Team, Team] = [
+    Array.from({ length: size }, () => ({ name: "", hero: "", role: "输出" as Role })),
+    Array.from({ length: size }, () => ({ name: "", hero: "", role: "输出" as Role })),
+  ]
+  const at = [0, 0]
+  shuffle(seats).forEach((seat) => {
+    const index = at[seat.team]
+    at[seat.team] += 1
+    teams[seat.team][index] = { name: seat.entry.name.trim(), hero: "", role: seat.role }
+  })
+  return teams
+}
+
 const ROLE_ROW = { 坦克: 0, 输出: 1, 支援: 2 } as const
 
 function orderTeams(teams: [Team, Team], balanceRoles: boolean): [Team, Team] {
@@ -334,6 +357,13 @@ function orderTeams(teams: [Team, Team], balanceRoles: boolean): [Team, Team] {
 }
 
 function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
+  if (rules.rolesOnly) {
+    for (let i = 0; i < RATE_TRIES; i += 1) {
+      const seats = assignSeats(roster, format, rules.balanceRoles, heroes, true)
+      if (seats) return orderTeams(fillRoles(seats, format), rules.balanceRoles)
+    }
+    throw new Error("玩家偏好设置冲突")
+  }
   if (!rules.balanceRatings) {
     for (let i = 0; i < RATE_TRIES; i += 1) {
       const seats = assignSeats(roster, format, rules.balanceRoles, heroes)
@@ -381,6 +411,7 @@ export function randomizeMatch(
     map,
     teams,
     audit: [],
+    rolesOnly: rules.rolesOnly,
   }
 }
 
@@ -391,6 +422,20 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
     match.teams[1].map((player) => ({ ...player })),
   ]
   const target = teams[teamIndex][playerIndex]
+  const entry = roster.slice(0, size * 2).find((row, index) => resolveSeatName(row, index) === target.name)
+  if (match.rolesOnly) {
+    if (rules.balanceRoles) return match
+    const roles = allowedRoles(entry ?? { roles: ALL_ROLES, name: "", open: true, avoid: [], heroes: [] })
+    const next = randomItem(roles.filter((role) => role !== target.role).length ? roles.filter((role) => role !== target.role) : roles)
+    if (next === target.role) return match
+    const from = target.role
+    target.role = next
+    return {
+      ...match,
+      teams,
+      audit: [...match.audit, { time: nowTime(), text: `${target.name}（${teamIndex === 0 ? "蓝队" : "红队"}）更换职责`, from, to: next }],
+    }
+  }
   const oldHero = target.hero
   const usedInTeam = new Set(teams[teamIndex].filter((_, i) => i !== playerIndex).map((p) => p.hero))
   const usedAcross = new Set(teams.flat().filter((_, i) => i !== teamIndex * size + playerIndex).map((p) => p.hero))
@@ -398,7 +443,6 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   const blocked = new Set(usedInTeam)
   if (!rules.allowRepeat) usedAcross.forEach((name) => blocked.add(name))
   blocked.add(oldHero)
-  const entry = roster.slice(0, size * 2).find((row, index) => resolveSeatName(row, index) === target.name)
   const allow = entry ? allowedHeroNames(entry) : null
   const candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!allow || allow.has(hero.name)))
   if (!candidates.length) return match
@@ -499,9 +543,11 @@ export function matchChatText(heroes: Hero[], match: Match) {
     "",
   ]
   match.teams.forEach((team, index) => {
-    lines.push(`${index === 0 ? "蓝队" : "红队"}  ${teamScore(heroes, team)}分`)
+    lines.push(match.rolesOnly ? (index === 0 ? "蓝队" : "红队") : `${index === 0 ? "蓝队" : "红队"}  ${teamScore(heroes, team)}分`)
     team.forEach((player, i) => {
-      lines.push(`${String(i + 1).padStart(2, "0")}  ${player.name}  ${player.hero}  ${player.role}`)
+      lines.push(match.rolesOnly
+        ? `${String(i + 1).padStart(2, "0")}  ${player.name}  ${player.role}`
+        : `${String(i + 1).padStart(2, "0")}  ${player.name}  ${player.hero}  ${player.role}`)
     })
     lines.push("")
   })

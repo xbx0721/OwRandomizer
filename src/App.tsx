@@ -55,10 +55,11 @@ import {
 } from "./lib/game"
 
 const RULE_COPY: { key: keyof Rules; title: string }[] = [
+  { key: "rolesOnly", title: "仅分配职责" },
   { key: "balanceRoles", title: "平衡队伍职责" },
-  { key: "allowRepeat", title: "允许双方重复英雄" },
-  { key: "allowReroll", title: "允许个人重选英雄" },
   { key: "balanceRatings", title: "平衡英雄评级" },
+  { key: "allowRepeat", title: "允许重复英雄" },
+  { key: "allowReroll", title: "允许重选英雄" },
 ]
 
 function copyToClipboard(text: string) {
@@ -567,17 +568,23 @@ export default function App() {
             </div>
           ))}
         </CardContent>
-        <CardFooter className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
-          {RULE_COPY.map((item) => (
-            <div key={item.key} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-              <Label htmlFor={item.key} className="text-sm font-normal">{item.title}</Label>
+        <CardFooter className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          {RULE_COPY.map((item) => {
+            const heroRule = item.key === "allowRepeat" || item.key === "balanceRatings"
+            const disabled = (heroRule && rules.rolesOnly) || (item.key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
+            const title = item.key === "allowReroll" && rules.rolesOnly ? "允许重选职责" : item.title
+            return (
+            <div key={item.key} className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${disabled ? "opacity-50" : ""}`}>
+              <Label htmlFor={item.key} className="text-sm font-normal">{title}</Label>
               <Switch
                 id={item.key}
-                checked={rules[item.key]}
+                checked={disabled ? false : rules[item.key]}
+                disabled={disabled}
                 onCheckedChange={(value) => setRule(item.key, value)}
               />
             </div>
-          ))}
+            )
+          })}
         </CardFooter>
       </Card>
 
@@ -708,22 +715,24 @@ export default function App() {
                           <span className={`inline-block h-2.5 w-2.5 rounded-full ${side ? "bg-blue" : "bg-red"}`} />
                           {side ? "蓝队" : "红队"}
                         </div>
-                        <span className="text-sm text-muted-foreground">{teamScore(heroes, team)}分</span>
+                        {match.rolesOnly ? null : <span className="text-sm text-muted-foreground">{teamScore(heroes, team)}分</span>}
                       </div>
                       <ul>
                         {team.map((player, playerIndex) => {
                           const hero = heroByName(heroes, player.hero)
+                          const RoleIcon = ROLE_ICON[player.role]
+                          const canReroll = rules.allowReroll && (!match.rolesOnly || !rules.balanceRoles)
                           return (
                             <li key={`${player.name}-${playerIndex}`} className="flex items-center gap-3 border-t px-4 py-2.5">
-                              <span className="relative h-10 w-10 overflow-hidden rounded-md border bg-muted">
-                                {hero ? <HeroPortrait hero={hero} /> : null}
+                              <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border bg-muted">
+                                {match.rolesOnly ? <RoleIcon className="h-4 w-4" /> : hero ? <HeroPortrait hero={hero} /> : null}
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium">{player.name}</span>
-                                <span className="text-xs text-muted-foreground">{player.hero} · {player.role} · {hero?.rating}</span>
+                                <span className="text-xs text-muted-foreground">{match.rolesOnly ? player.role : `${player.hero} · ${player.role} · ${hero?.rating}`}</span>
                               </span>
-                              {rules.allowReroll ? (
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的英雄`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster))}>
+                              {canReroll ? (
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的${match.rolesOnly ? "职责" : "英雄"}`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster))}>
                                   <RotateCw className="h-4 w-4" />
                                 </Button>
                               ) : null}
