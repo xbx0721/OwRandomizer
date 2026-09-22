@@ -11,6 +11,9 @@ export type Rules = {
   allowReroll: boolean
   balanceRatings: boolean
   rolesOnly: boolean
+  allowPrefRoles: boolean
+  allowPrefHeroes: boolean
+  allowPrefAvoid: boolean
 }
 export type AuditItem = {
   time: string
@@ -122,6 +125,13 @@ export function entryCanTakeRole(entry: RosterEntry, role: Role, heroes: Hero[],
   return heroPool(heroes).some((hero) => hero.role === role && (!allow || allow.has(hero.name)))
 }
 
+function canFillRole(entry: RosterEntry, role: Role, heroes: Hero[], rules: Rules): boolean {
+  if (rules.allowPrefRoles && !allowedRoles(entry).includes(role)) return false
+  if (rules.rolesOnly || !rules.allowPrefHeroes) return true
+  const allow = allowedHeroNames(entry)
+  return heroPool(heroes).some((hero) => hero.role === role && (!allow || allow.has(hero.name)))
+}
+
 export function roleSlots(format: Format): Role[] {
   return format === 6
     ? ["坦克", "坦克", "输出", "输出", "支援", "支援"]
@@ -141,6 +151,9 @@ export const defaultRules = (): Rules => ({
   allowReroll: false,
   balanceRatings: true,
   rolesOnly: false,
+  allowPrefRoles: true,
+  allowPrefHeroes: true,
+  allowPrefAvoid: true,
 })
 
 export type SavedState = {
@@ -245,10 +258,10 @@ function pickHero(
   return randomItem(candidates)
 }
 
-function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolean, heroes: Hero[], ignoreHeroes = false): { team: 0 | 1; role: Role; entry: RosterEntry }[] | null {
+function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rules: Rules): { team: 0 | 1; role: Role; entry: RosterEntry }[] | null {
   const people = shuffle(roster.map((entry, index) => ({ entry, index })))
   const slots: { team: 0 | 1; role: Role | null }[] = []
-  if (balanceRoles) {
+  if (rules.balanceRoles) {
     for (const role of roleSlots(format)) slots.push({ team: 0, role })
     for (const role of roleSlots(format)) slots.push({ team: 1, role })
   } else {
@@ -257,7 +270,11 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
   }
   const used = slots.map(() => false)
   const pick = people.map(() => -1)
-  const order = people.map((_, index) => index).sort((a, b) => allowedRoles(people[a].entry).length - allowedRoles(people[b].entry).length)
+  const order = people.map((_, index) => index).sort((a, b) => {
+    const left = rules.allowPrefRoles ? allowedRoles(people[a].entry).length : ALL_ROLES.length
+    const right = rules.allowPrefRoles ? allowedRoles(people[b].entry).length : ALL_ROLES.length
+    return left - right
+  })
   const walk = (depth: number): boolean => {
     if (depth === order.length) return true
     const person = order[depth]
@@ -266,15 +283,17 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
       if (used[slot]) return false
       const need = slots[slot].role
       if (need) {
-        if (!entryCanTakeRole(entry, need, heroes, ignoreHeroes)) return false
-      } else if (!allowedRoles(entry).some((role) => entryCanTakeRole(entry, role, heroes, ignoreHeroes))) {
+        if (!canFillRole(entry, need, heroes, rules)) return false
+      } else if (!ALL_ROLES.some((role) => canFillRole(entry, role, heroes, rules))) {
         return false
       }
-      const team = slots[slot].team
-      for (let other = 0; other < people.length; other += 1) {
-        if (pick[other] < 0) continue
-        if (slots[pick[other]].team !== team) continue
-        if (entry.avoid.includes(people[other].index) || people[other].entry.avoid.includes(seat)) return false
+      if (rules.allowPrefAvoid) {
+        const team = slots[slot].team
+        for (let other = 0; other < people.length; other += 1) {
+          if (pick[other] < 0) continue
+          if (slots[pick[other]].team !== team) continue
+          if (entry.avoid.includes(people[other].index) || people[other].entry.avoid.includes(seat)) return false
+        }
       }
       return true
     }))
@@ -290,10 +309,10 @@ function assignSeats(roster: RosterEntry[], format: Format, balanceRoles: boolea
   if (!walk(0)) return null
   return people.map((person, index) => {
     const need = slots[pick[index]].role
-    const fallback = allowedRoles(person.entry).filter((role) => entryCanTakeRole(person.entry, role, heroes, ignoreHeroes))
+    const fallback = ALL_ROLES.filter((role) => canFillRole(person.entry, role, heroes, rules))
     return {
       team: slots[pick[index]].team,
-      role: need ?? randomItem(fallback.length ? fallback : allowedRoles(person.entry)),
+      role: need ?? randomItem(fallback.length ? fallback : ALL_ROLES),
       entry: person.entry,
     }
   })
@@ -320,7 +339,7 @@ function fillHeroes(
       allowRepeat: rules.allowRepeat,
       usedAcross,
       exclude: null,
-      allow: allowedHeroNames(seat.entry),
+      allow: rules.allowPrefHeroes ? allowedHeroNames(seat.entry) : null,
     })
     const index = at[seat.team]
     at[seat.team] += 1
@@ -359,14 +378,14 @@ function orderTeams(teams: [Team, Team], balanceRoles: boolean): [Team, Team] {
 function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
   if (rules.rolesOnly) {
     for (let i = 0; i < RATE_TRIES; i += 1) {
-      const seats = assignSeats(roster, format, rules.balanceRoles, heroes, true)
+      const seats = assignSeats(roster, format, heroes, rules)
       if (seats) return orderTeams(fillRoles(seats, format), rules.balanceRoles)
     }
     throw new Error("玩家偏好设置冲突")
   }
   if (!rules.balanceRatings) {
     for (let i = 0; i < RATE_TRIES; i += 1) {
-      const seats = assignSeats(roster, format, rules.balanceRoles, heroes)
+      const seats = assignSeats(roster, format, heroes, rules)
       if (seats) return orderTeams(fillHeroes(heroes, seats, rules, format), rules.balanceRoles)
     }
     throw new Error("玩家偏好设置冲突")
@@ -375,7 +394,7 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
   let best: [Team, Team] | null = null
   let bestCost = Infinity
   for (let i = 0; i < RATE_TRIES; i += 1) {
-    const seats = assignSeats(roster, format, rules.balanceRoles, heroes)
+    const seats = assignSeats(roster, format, heroes, rules)
     if (!seats) continue
     const teams = fillHeroes(heroes, seats, rules, format)
     const cost = ratingCost(scoreDiff(heroes, teams), target)
@@ -425,7 +444,7 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   const entry = roster.slice(0, size * 2).find((row, index) => resolveSeatName(row, index) === target.name)
   if (match.rolesOnly) {
     if (rules.balanceRoles) return match
-    const roles = allowedRoles(entry ?? { roles: ALL_ROLES, name: "", open: true, avoid: [], heroes: [] })
+    const roles = rules.allowPrefRoles ? allowedRoles(entry ?? { roles: ALL_ROLES, name: "", open: true, avoid: [], heroes: [] }) : ALL_ROLES
     const next = randomItem(roles.filter((role) => role !== target.role).length ? roles.filter((role) => role !== target.role) : roles)
     if (next === target.role) return match
     const from = target.role
@@ -443,7 +462,7 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   const blocked = new Set(usedInTeam)
   if (!rules.allowRepeat) usedAcross.forEach((name) => blocked.add(name))
   blocked.add(oldHero)
-  const allow = entry ? allowedHeroNames(entry) : null
+  const allow = rules.allowPrefHeroes && entry ? allowedHeroNames(entry) : null
   const candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!allow || allow.has(hero.name)))
   if (!candidates.length) return match
   let pick = randomItem(candidates)

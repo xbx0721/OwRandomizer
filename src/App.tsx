@@ -60,6 +60,9 @@ const RULE_COPY: { key: keyof Rules; title: string }[] = [
   { key: "balanceRatings", title: "平衡英雄评级" },
   { key: "allowRepeat", title: "允许重复英雄" },
   { key: "allowReroll", title: "允许重选英雄" },
+  { key: "allowPrefRoles", title: "允许偏好职责" },
+  { key: "allowPrefHeroes", title: "允许偏好英雄" },
+  { key: "allowPrefAvoid", title: "允许偏好避免" },
 ]
 
 function copyToClipboard(text: string) {
@@ -570,7 +573,7 @@ export default function App() {
         </CardContent>
         <CardFooter className="grid grid-cols-1 gap-2 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
           {RULE_COPY.map((item) => {
-            const heroRule = item.key === "allowRepeat" || item.key === "balanceRatings"
+            const heroRule = item.key === "allowRepeat" || item.key === "balanceRatings" || item.key === "allowPrefHeroes"
             const disabled = (heroRule && rules.rolesOnly) || (item.key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
             const title = item.key === "allowReroll" && rules.rolesOnly ? "允许重选职责" : item.title
             return (
