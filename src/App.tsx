@@ -574,7 +574,11 @@ export default function App() {
   function switchFormat(next: Format) {
     if (next === format) return
     setRoster((prev) => remapRoster(prev, format, next))
-    setPrefIndex((prev) => remapPrefIndex(prev, format, next))
+    setPrefIndex((prev) => {
+      const mapped = remapPrefIndex(prev, format, next)
+      if (next === 5 && mapped != null && mapped >= 10) return null
+      return mapped
+    })
     setFormat(next)
     setMatch(null)
   }

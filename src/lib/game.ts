@@ -91,27 +91,37 @@ export function padRoster(roster: RosterEntry[]): RosterEntry[] {
 }
 
 export function remapRoster(roster: RosterEntry[], from: Format, to: Format): RosterEntry[] {
+  const prev = padRoster(roster)
   const shift = (ids: number[]) => [...new Set(ids.map((item) => remapPrefIndex(item, from, to)).filter((item): item is number => item != null))]
-  const shifted = roster.map((entry) => ({
+  const shifted = prev.map((entry) => ({
     ...entry,
     ally: shift(entry.ally),
     avoid: shift(entry.avoid),
   }))
   if (from === 5 && to === 6) {
-    return padRoster([...shifted.slice(0, 5), emptySeat(), ...shifted.slice(5, 10), emptySeat()])
+    return padRoster([...shifted.slice(0, 5), shifted[10], ...shifted.slice(5, 10), shifted[11]])
   }
   if (from === 6 && to === 5) {
-    return padRoster([...shifted.slice(0, 5), ...shifted.slice(6, 11)])
+    return padRoster([...shifted.slice(0, 5), ...shifted.slice(6, 11), shifted[5], shifted[11]])
   }
   return padRoster(shifted)
 }
 
 export function remapPrefIndex(index: number | null, from: Format, to: Format): number | null {
   if (index == null) return null
-  if (from === 5 && to === 6) return index < 5 ? index : index + 1
+  if (from === 5 && to === 6) {
+    if (index < 5) return index
+    if (index === 10) return 5
+    if (index === 11) return 11
+    if (index <= 9) return index + 1
+    return index
+  }
   if (from === 6 && to === 5) {
-    if (index === 5 || index === 11) return null
-    return index < 5 ? index : index - 1
+    if (index < 5) return index
+    if (index === 5) return 10
+    if (index === 11) return 11
+    if (index <= 10) return index - 1
+    return index
   }
   return index
 }
