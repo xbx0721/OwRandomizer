@@ -58,6 +58,7 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
   {
     title: "对局",
     items: [
+      { key: "teamsOnly", title: "仅分配队伍" },
       { key: "rolesOnly", title: "仅分配职责" },
       { key: "balanceRoles", title: "平衡队伍职责" },
       { key: "balanceRatings", title: "平衡英雄评级" },
@@ -71,18 +72,22 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
       { key: "allowPrefRoles", title: "允许偏好职责" },
       { key: "allowPrefHeroes", title: "允许偏好英雄" },
       { key: "allowPrefAlly", title: "允许偏好亲和" },
-      { key: "allowPrefAvoid", title: "允许偏好避免" },
+      { key: "allowPrefAvoid", title: "允许偏好排斥" },
     ],
   },
 ]
 
 function ruleDisabled(key: keyof Rules, rules: Rules) {
+  if (rules.teamsOnly) {
+    return key === "balanceRoles" || key === "balanceRatings" || key === "allowRepeat" || key === "allowReroll" || key === "allowPrefRoles" || key === "allowPrefHeroes"
+  }
   const heroRule = key === "allowRepeat" || key === "balanceRatings" || key === "allowPrefHeroes"
   return (heroRule && rules.rolesOnly) || (key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
 }
 
 function ruleTitle(key: keyof Rules, title: string, rules: Rules) {
-  return key === "allowReroll" && rules.rolesOnly ? "允许重选职责" : title
+  if (key === "allowReroll" && rules.rolesOnly) return "允许重选职责"
+  return title
 }
 
 function usePrefBodyHeight(open: boolean, tick: string) {
@@ -305,6 +310,15 @@ const ROLE_ICON = {
   支援: Heart,
 } as const
 
+function QuestionMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </svg>
+  )
+}
+
 function PrefTabs({
   prefTab,
   setPrefTab,
@@ -343,7 +357,7 @@ function PrefTabs({
           <TabsTrigger className="h-7 px-1 sm:px-2" value="roles">职责</TabsTrigger>
           <TabsTrigger className="h-7 px-1 sm:px-2" value="heroes">英雄</TabsTrigger>
           <TabsTrigger className="h-7 px-1 sm:px-2" value="ally">亲和</TabsTrigger>
-          <TabsTrigger className="h-7 px-1 sm:px-2" value="avoid">避免</TabsTrigger>
+          <TabsTrigger className="h-7 px-1 sm:px-2" value="avoid">排斥</TabsTrigger>
         </TabsList>
       </DialogHeader>
       <div
@@ -665,7 +679,12 @@ export default function App() {
   }
 
   function setRule(key: keyof Rules, value: boolean) {
-    setRules((prev) => ({ ...prev, [key]: value }))
+    setRules((prev) => {
+      const next = { ...prev, [key]: value }
+      if (key === "teamsOnly" && value) next.rolesOnly = false
+      if (key === "rolesOnly" && value) next.teamsOnly = false
+      return next
+    })
   }
 
   function patchDraftHero(name: string, patch: Partial<Hero>) {
@@ -970,21 +989,23 @@ export default function App() {
                           <span className={`inline-block h-2.5 w-2.5 rounded-full ${side ? "bg-blue" : "bg-red"}`} />
                           {side ? "蓝队" : "红队"}
                         </div>
-                        {match.rolesOnly ? null : <span className="text-sm text-muted-foreground">{teamScore(heroes, team)}分</span>}
+                        {match.rolesOnly || match.teamsOnly ? null : <span className="text-sm text-muted-foreground">{teamScore(heroes, team)}分</span>}
                       </div>
                       <ul>
                         {team.map((player, playerIndex) => {
                           const hero = heroByName(heroes, player.hero)
                           const RoleIcon = ROLE_ICON[player.role]
-                          const canReroll = rules.allowReroll && (!match.rolesOnly || !rules.balanceRoles)
+                          const canReroll = rules.allowReroll && !match.teamsOnly && (!match.rolesOnly || !rules.balanceRoles)
                           return (
                             <li key={`${player.name}-${playerIndex}`} className="flex items-center gap-3 border-t px-4 py-2.5">
                               <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border bg-muted">
-                                {match.rolesOnly ? <RoleIcon className="h-4 w-4" /> : hero ? <HeroPortrait hero={hero} /> : null}
+                                {match.teamsOnly ? <QuestionMark className="h-5 w-5 text-muted-foreground" /> : match.rolesOnly ? <RoleIcon className="h-4 w-4" /> : hero ? <HeroPortrait hero={hero} /> : null}
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium">{player.name}</span>
-                                <span className="text-xs text-muted-foreground">{match.rolesOnly ? player.role : `${player.hero} · ${player.role} · ${hero?.rating}`}</span>
+                                {match.teamsOnly ? null : (
+                                  <span className="text-xs text-muted-foreground">{match.rolesOnly ? player.role : `${player.hero} · ${player.role} · ${hero?.rating}`}</span>
+                                )}
                               </span>
                               {canReroll ? (
                                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的${match.rolesOnly ? "职责" : "英雄"}`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster))}>

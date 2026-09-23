@@ -11,6 +11,7 @@ export type Rules = {
   allowReroll: boolean
   balanceRatings: boolean
   rolesOnly: boolean
+  teamsOnly: boolean
   allowPrefRoles: boolean
   allowPrefHeroes: boolean
   allowPrefAlly: boolean
@@ -28,6 +29,7 @@ export type Match = {
   teams: [Team, Team]
   audit: AuditItem[]
   rolesOnly: boolean
+  teamsOnly: boolean
 }
 
 export const ALL_ROLES: Role[] = ["坦克", "输出", "支援"]
@@ -87,6 +89,24 @@ export function padRoster(roster: RosterEntry[]): RosterEntry[] {
     return { ...entry, ally, avoid }
   })
   while (next.length < ROSTER_CAP) next.push(emptySeat())
+  return exclusiveRoster(next)
+}
+
+function exclusiveRoster(roster: RosterEntry[]): RosterEntry[] {
+  const next = roster.map((entry) => ({
+    ...entry,
+    ally: [...entry.ally],
+    avoid: [...entry.avoid],
+  }))
+  for (let i = 0; i < next.length; i += 1) {
+    for (let j = i + 1; j < next.length; j += 1) {
+      const avoided = next[i].avoid.includes(j) || next[j].avoid.includes(i)
+      const allied = next[i].ally.includes(j) || next[j].ally.includes(i)
+      if (!avoided || !allied) continue
+      next[i].ally = next[i].ally.filter((item) => item !== j)
+      next[j].ally = next[j].ally.filter((item) => item !== i)
+    }
+  }
   return next
 }
 
@@ -143,6 +163,7 @@ export function entryCanTakeRole(entry: RosterEntry, role: Role, heroes: Hero[],
 }
 
 function canFillRole(entry: RosterEntry, role: Role, heroes: Hero[], rules: Rules): boolean {
+  if (rules.teamsOnly) return true
   if (rules.allowPrefRoles && !allowedRoles(entry).includes(role)) return false
   if (rules.rolesOnly || !rules.allowPrefHeroes) return true
   const allow = allowedHeroNames(entry)
@@ -168,6 +189,7 @@ export const defaultRules = (): Rules => ({
   allowReroll: false,
   balanceRatings: true,
   rolesOnly: false,
+  teamsOnly: false,
   allowPrefRoles: true,
   allowPrefHeroes: true,
   allowPrefAlly: true,
@@ -238,7 +260,7 @@ function nowTime() {
 
 export function poolError(heroes: Hero[], maps: GameMap[], rules: Rules, format: Format): string | null {
   if (!mapPool(maps).length) return "请至少选择一张地图"
-  if (rules.rolesOnly) return null
+  if (rules.rolesOnly || rules.teamsOnly) return null
   const pool = heroPool(heroes)
   const count = (role: Role) => pool.filter((hero) => hero.role === role).length
   const need = roleNeed(format)
@@ -280,7 +302,7 @@ function pickHero(
 function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rules: Rules): { team: 0 | 1; role: Role; entry: RosterEntry; index: number }[] | null {
   const people = shuffle(roster.map((entry, index) => ({ entry, index })))
   const slots: { team: 0 | 1; role: Role | null }[] = []
-  if (rules.balanceRoles) {
+  if (rules.balanceRoles && !rules.teamsOnly) {
     for (const role of roleSlots(format)) slots.push({ team: 0, role })
     for (const role of roleSlots(format)) slots.push({ team: 1, role })
   } else {
@@ -306,31 +328,19 @@ function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rule
       } else if (!ALL_ROLES.some((role) => canFillRole(entry, role, heroes, rules))) {
         return false
       }
-      if (rules.allowPrefAvoid) {
+      if (rules.allowPrefAvoid || rules.allowPrefAlly) {
         const team = slots[slot].team
         for (let other = 0; other < people.length; other += 1) {
           if (pick[other] < 0) continue
-          if (slots[pick[other]].team !== team) continue
-          if (entry.avoid.includes(people[other].index) || people[other].entry.avoid.includes(seat)) return false
+          if (slots[pick[other]].team !== team) {
+            if (rules.allowPrefAlly && (entry.ally.includes(people[other].index) || people[other].entry.ally.includes(seat))) return false
+            continue
+          }
+          if (rules.allowPrefAvoid && (entry.avoid.includes(people[other].index) || people[other].entry.avoid.includes(seat))) return false
         }
       }
       return true
     }))
-    if (rules.allowPrefAlly) {
-      const prefer = new Set<0 | 1>()
-      for (let other = 0; other < people.length; other += 1) {
-        if (pick[other] < 0) continue
-        if (entry.ally.includes(people[other].index) || people[other].entry.ally.includes(seat)) {
-          prefer.add(slots[pick[other]].team)
-        }
-      }
-      if (prefer.size) {
-        const hot = candidates.filter((slot) => prefer.has(slots[slot].team))
-        const cold = candidates.filter((slot) => !prefer.has(slots[slot].team))
-        candidates.length = 0
-        candidates.push(...hot, ...cold)
-      }
-    }
     for (const slot of candidates) {
       used[slot] = true
       pick[person] = slot
@@ -403,48 +413,164 @@ function fillRoles(
   return teams
 }
 
+function fillTeams(
+  seats: { team: 0 | 1; entry: RosterEntry }[],
+  format: Format,
+): [Team, Team] {
+  const size = format
+  const teams: [Team, Team] = [
+    Array.from({ length: size }, () => ({ name: "", hero: "", role: "输出" as Role })),
+    Array.from({ length: size }, () => ({ name: "", hero: "", role: "输出" as Role })),
+  ]
+  const at = [0, 0]
+  shuffle(seats).forEach((seat) => {
+    const index = at[seat.team]
+    at[seat.team] += 1
+    teams[seat.team][index] = { name: seat.entry.name.trim(), hero: "", role: "输出" }
+  })
+  return teams
+}
+
+
 const ROLE_ROW = { 坦克: 0, 输出: 1, 支援: 2 } as const
 
-function orderTeams(teams: [Team, Team], balanceRoles: boolean): [Team, Team] {
-  if (!balanceRoles) return teams
+function orderTeams(teams: [Team, Team]): [Team, Team] {
   return teams.map((team) => team.slice().sort((a, b) => ROLE_ROW[a.role] - ROLE_ROW[b.role])) as [Team, Team]
 }
 
-function affinityScore(seats: { team: 0 | 1; entry: RosterEntry; index: number }[]): number {
-  const teamOf = new Map(seats.map((seat) => [seat.index, seat.team]))
-  let score = 0
-  for (const seat of seats) {
-    for (const other of seat.entry.ally) {
-      if (other <= seat.index) continue
-      if (teamOf.get(other) === seat.team) score += 1
+function pairError(roster: RosterEntry[], format: Format, rules: Rules): string | null {
+  const need = format * 2
+  const seats = roster.slice(0, need)
+  const allyOn = rules.allowPrefAlly
+  const avoidOn = rules.allowPrefAvoid
+  if (!allyOn && !avoidOn) return null
+
+  const linked = (i: number, j: number, key: "ally" | "avoid") => seats[i][key].includes(j) || seats[j][key].includes(i)
+
+  const parent = Array.from({ length: need }, (_, index) => index)
+  const find = (index: number): number => (parent[index] === index ? index : (parent[index] = find(parent[index])))
+  const unite = (a: number, b: number) => {
+    const left = find(a)
+    const right = find(b)
+    if (left !== right) parent[left] = right
+  }
+  if (allyOn) {
+    for (let i = 0; i < need; i += 1) {
+      for (const other of seats[i].ally) {
+        if (other !== i && other < need) unite(i, other)
+      }
     }
   }
-  return score
+
+  const groups = new Map<number, number[]>()
+  for (let i = 0; i < need; i += 1) {
+    const root = find(i)
+    const members = groups.get(root)
+    if (members) members.push(i)
+    else groups.set(root, [i])
+  }
+
+  if (allyOn) {
+    for (const members of groups.values()) {
+      if (members.length > format) return "亲和人数超过一队，无法组队"
+    }
+  }
+
+  if (allyOn && avoidOn) {
+    for (const members of groups.values()) {
+      for (let a = 0; a < members.length; a += 1) {
+        for (let b = a + 1; b < members.length; b += 1) {
+          if (linked(members[a], members[b], "avoid")) return "亲和与排斥冲突，无法组队"
+        }
+      }
+    }
+  }
+
+  if (!avoidOn) return null
+
+  const ids = [...groups.keys()]
+  const at = new Map(ids.map((id, index) => [id, index]))
+  const size = ids.map((id) => {
+    const members = groups.get(id)
+    return members ? members.length : 0
+  })
+  const adj: number[][] = ids.map(() => [])
+  for (let i = 0; i < need; i += 1) {
+    for (const other of seats[i].avoid) {
+      if (other === i || other >= need) continue
+      const a = at.get(find(i))
+      const b = at.get(find(other))
+      if (a == null || b == null || a === b) continue
+      if (adj[a].indexOf(b) < 0) {
+        adj[a].push(b)
+        adj[b].push(a)
+      }
+    }
+  }
+
+  const color = ids.map(() => -1)
+  const blobs: { a: number; b: number }[] = []
+  for (let start = 0; start < ids.length; start += 1) {
+    if (color[start] !== -1) continue
+    color[start] = 0
+    const queue = [start]
+    let sideA = 0
+    let sideB = 0
+    for (const node of queue) {
+      if (color[node] === 0) sideA += size[node]
+      else sideB += size[node]
+      for (const next of adj[node]) {
+        if (color[next] === -1) {
+          color[next] = 1 - color[node]
+          queue.push(next)
+        } else if (color[next] === color[node]) {
+          return "排斥关系无法分成两队"
+        }
+      }
+    }
+    if (sideA > format || sideB > format) return "排斥人数过多，无法组队"
+    blobs.push({ a: sideA, b: sideB })
+  }
+
+  let possible = new Set([0])
+  for (const blob of blobs) {
+    const next = new Set<number>()
+    for (const sum of possible) {
+      next.add(sum + blob.a)
+      next.add(sum + blob.b)
+    }
+    possible = next
+  }
+  if (!possible.has(format)) return "排斥关系无法分成两队"
+  return null
 }
 
 function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
-  const wantAlly = rules.allowPrefAlly && roster.some((entry) => entry.ally.length)
-  const rate = !rules.rolesOnly && rules.balanceRatings
+  const cleaned = exclusiveRoster(roster)
+  const conflict = pairError(cleaned, format, rules)
+  if (conflict) throw new Error(conflict)
+  const rate = !rules.rolesOnly && !rules.teamsOnly && rules.balanceRatings
   const target = rate ? ratingTarget() : 0
   let best: [Team, Team] | null = null
-  let bestAlly = -1
   let bestCost = Infinity
   for (let i = 0; i < RATE_TRIES; i += 1) {
-    const seats = assignSeats(roster, format, heroes, rules)
+    const seats = assignSeats(cleaned, format, heroes, rules)
     if (!seats) continue
-    const ally = wantAlly ? affinityScore(seats) : 0
-    const teams = rules.rolesOnly ? fillRoles(seats, format) : fillHeroes(heroes, seats, rules, format)
+    const teams = rules.teamsOnly
+      ? fillTeams(seats, format)
+      : rules.rolesOnly
+        ? fillRoles(seats, format)
+        : fillHeroes(heroes, seats, rules, format)
     const cost = rate ? ratingCost(scoreDiff(heroes, teams), target) : 0
-    if (ally > bestAlly || (ally === bestAlly && cost < bestCost)) {
+    if (cost < bestCost) {
       best = teams
-      bestAlly = ally
       bestCost = cost
     }
-    if (!wantAlly && !rate) return orderTeams(teams, rules.balanceRoles)
-    if (bestCost === 0 && !wantAlly) break
+    if (!rate) return orderTeams(teams)
+    if (bestCost === 0) break
   }
   if (!best) throw new Error("玩家偏好设置冲突")
-  return orderTeams(best, rules.balanceRoles)
+  return orderTeams(best)
 }
 
 export function randomizeMatch(
@@ -470,10 +596,12 @@ export function randomizeMatch(
     teams,
     audit: [],
     rolesOnly: rules.rolesOnly,
+    teamsOnly: rules.teamsOnly,
   }
 }
 
 export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex: 0 | 1, playerIndex: number, roster: RosterEntry[]): Match {
+  if (match.teamsOnly) return match
   const size = match.format
   const teams: [Team, Team] = [
     match.teams[0].map((player) => ({ ...player })),
@@ -490,7 +618,7 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
     target.role = next
     return {
       ...match,
-      teams,
+      teams: orderTeams(teams),
       audit: [...match.audit, { time: nowTime(), text: `${target.name}（${teamIndex === 0 ? "蓝队" : "红队"}）更换职责`, from, to: next }],
     }
   }
@@ -602,11 +730,13 @@ export function matchChatText(heroes: Hero[], match: Match) {
     "",
   ]
   match.teams.forEach((team, index) => {
-    lines.push(match.rolesOnly ? (index === 0 ? "蓝队" : "红队") : `${index === 0 ? "蓝队" : "红队"}  ${teamScore(heroes, team)}分`)
+    const hideScore = match.rolesOnly || match.teamsOnly
+    lines.push(hideScore ? (index === 0 ? "蓝队" : "红队") : `${index === 0 ? "蓝队" : "红队"}  ${teamScore(heroes, team)}分`)
     team.forEach((player, i) => {
-      lines.push(match.rolesOnly
-        ? `${String(i + 1).padStart(2, "0")}  ${player.name}  ${player.role}`
-        : `${String(i + 1).padStart(2, "0")}  ${player.name}  ${player.hero}  ${player.role}`)
+      const no = String(i + 1).padStart(2, "0")
+      if (match.teamsOnly) lines.push(`${no}  ${player.name}`)
+      else if (match.rolesOnly) lines.push(`${no}  ${player.name}  ${player.role}`)
+      else lines.push(`${no}  ${player.name}  ${player.hero}  ${player.role}`)
     })
     lines.push("")
   })

@@ -70,7 +70,7 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
   ctx.fillText(`${match.format}v${match.format}  ·  ${match.map.name}  ·  ${match.map.mode}`, W - PAD, PAD + 32)
   ctx.textAlign = "left"
   const colW = (W - PAD * 2 - GAP) / 2
-  const portraits = match.rolesOnly
+  const portraits = match.rolesOnly || match.teamsOnly
     ? []
     : await Promise.all(
       match.teams.flatMap((team) => team.map((player) => loadPortrait(heroByName(heroes, player.hero)))),
@@ -91,7 +91,7 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
     ctx.fillStyle = INK
     ctx.font = "600 16px \"Noto Sans SC\", sans-serif"
     ctx.fillText(teamIndex === 0 ? "蓝队" : "红队", x + 16, y + 28)
-    if (!match.rolesOnly) {
+    if (!match.rolesOnly && !match.teamsOnly) {
       ctx.fillStyle = MUTED
       ctx.font = "400 13px \"Noto Sans SC\", sans-serif"
       ctx.textAlign = "right"
@@ -113,7 +113,17 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
       ctx.save()
       roundRect(ctx, imgX, imgY, imgS, imgS, 6)
       ctx.clip()
-      if (match.rolesOnly) {
+      if (match.teamsOnly) {
+        ctx.fillStyle = LINE
+        ctx.fillRect(imgX, imgY, imgS, imgS)
+        ctx.fillStyle = MUTED
+        ctx.font = "700 22px \"IBM Plex Sans Condensed\", sans-serif"
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        ctx.fillText("?", imgX + imgS / 2, imgY + imgS / 2 + 1)
+        ctx.textAlign = "left"
+        ctx.textBaseline = "alphabetic"
+      } else if (match.rolesOnly) {
         ctx.fillStyle = roleFill[player.role] ?? LINE
         ctx.fillRect(imgX, imgY, imgS, imgS)
       } else {
@@ -131,10 +141,12 @@ export async function renderMatchCard(match: Match, heroes: Hero[]): Promise<Blo
       ctx.fillStyle = INK
       ctx.font = "500 14px \"Noto Sans SC\", sans-serif"
       ctx.fillText(ellipsis(ctx, player.name, max), textX, py + 24)
-      ctx.fillStyle = MUTED
-      ctx.font = "400 12px \"Noto Sans SC\", sans-serif"
-      const sub = match.rolesOnly ? player.role : `${player.hero} · ${player.role}${heroByName(heroes, player.hero) ? ` · ${heroByName(heroes, player.hero)?.rating}` : ""}`
-      ctx.fillText(ellipsis(ctx, sub, max), textX, py + 42)
+      if (!match.teamsOnly) {
+        ctx.fillStyle = MUTED
+        ctx.font = "400 12px \"Noto Sans SC\", sans-serif"
+        const sub = match.rolesOnly ? player.role : `${player.hero} · ${player.role}${heroByName(heroes, player.hero) ? ` · ${heroByName(heroes, player.hero)?.rating}` : ""}`
+        ctx.fillText(ellipsis(ctx, sub, max), textX, py + 42)
+      }
     })
   })
 
