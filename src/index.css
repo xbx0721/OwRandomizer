@@ -109,3 +109,10 @@
     transition: none !important;
   }
 }
+
+[data-radix-scroll-area-viewport] {
+  scrollbar-width: none;
+}
+[data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  display: none;
+}

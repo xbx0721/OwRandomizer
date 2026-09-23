@@ -44,12 +44,13 @@ export type RosterEntry = {
   avoid: number[]
   heroes: string[]
   heroNone: boolean
+  playerId: string
 }
 
 export const ROSTER_CAP = 12
 
 export function emptySeat(): RosterEntry {
-  return { name: "", roles: [...ALL_ROLES], open: false, ally: [], avoid: [], heroes: [], heroNone: false }
+  return { name: "", roles: [...ALL_ROLES], open: true, ally: [], avoid: [], heroes: [], heroNone: false, playerId: "" }
 }
 
 export function seatLabel(index: number) {
@@ -63,10 +64,10 @@ export function resolveSeatName(entry: Pick<RosterEntry, "name">, index: number)
 export function parseRosterEntry(raw: unknown): RosterEntry {
   if (typeof raw === "string") {
     const name = raw.slice(0, 16)
-    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()), ally: [], avoid: [], heroes: [], heroNone: false }
+    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()), ally: [], avoid: [], heroes: [], heroNone: false, playerId: "" }
   }
   if (!raw || typeof raw !== "object") return emptySeat()
-  const row = raw as { name?: unknown; roles?: unknown; open?: unknown; ally?: unknown; avoid?: unknown; heroes?: unknown; heroNone?: unknown }
+  const row = raw as { name?: unknown; roles?: unknown; open?: unknown; ally?: unknown; avoid?: unknown; heroes?: unknown; heroNone?: unknown; playerId?: unknown }
   const name = typeof row.name === "string" ? row.name.slice(0, 16) : ""
   const listed = Array.isArray(row.roles) ? row.roles : null
   const roles = listed ? ALL_ROLES.filter((role) => listed.includes(role)) : [...ALL_ROLES]
@@ -77,7 +78,12 @@ export function parseRosterEntry(raw: unknown): RosterEntry {
   const heroes = Array.isArray(row.heroes)
     ? [...new Set(row.heroes.filter((item): item is string => typeof item === "string" && item.length > 0))]
     : []
-  return { name, roles, open, ally: ids(row.ally), avoid: ids(row.avoid), heroes, heroNone: row.heroNone === true }
+  const playerId = typeof row.playerId === "string" ? row.playerId : ""
+  return { name, roles, open, ally: ids(row.ally), avoid: ids(row.avoid), heroes, heroNone: row.heroNone === true, playerId }
+}
+
+export function revealSeats(roster: RosterEntry[], format: Format) {
+  return roster.map((entry, index) => (index < format * 2 ? { ...entry, open: true } : entry))
 }
 
 export function padRoster(roster: RosterEntry[]): RosterEntry[] {
@@ -108,6 +114,281 @@ function exclusiveRoster(roster: RosterEntry[]): RosterEntry[] {
     }
   }
   return next
+}
+
+export type PlayerProfile = {
+  id: string
+  name: string
+  roles: Role[]
+  heroes: string[]
+  heroNone: boolean
+  ally: string[]
+  avoid: string[]
+  seen: number
+  created: number
+}
+
+function uniqueNames(names: string[], self = "") {
+  return [...new Set(names.map((item) => item.trim()).filter((item) => item && item !== self))]
+}
+
+export function newPlayerId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function formatFavoriteDate(ts: number) {
+  if (!ts) return ""
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric" }).format(new Date(ts))
+}
+
+export function seatedName(entry: Pick<RosterEntry, "name" | "open">, index: number) {
+  if (!entry.open) return ""
+  const name = entry.name.trim()
+  if (!name || name === seatLabel(index)) return ""
+  return name
+}
+
+export function seatedPlayerId(entry: Pick<RosterEntry, "open" | "playerId">) {
+  return entry.open && entry.playerId ? entry.playerId : ""
+}
+
+export function emptyProfile(name: string): PlayerProfile {
+  const now = Date.now()
+  return {
+    id: newPlayerId(),
+    name: name.trim().slice(0, 16),
+    roles: [...ALL_ROLES],
+    heroes: [],
+    heroNone: false,
+    ally: [],
+    avoid: [],
+    seen: now,
+    created: now,
+  }
+}
+
+export function parsePlayerProfile(raw: unknown): PlayerProfile | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as { id?: unknown; name?: unknown; roles?: unknown; heroes?: unknown; heroNone?: unknown; ally?: unknown; avoid?: unknown; seen?: unknown; created?: unknown }
+  const name = typeof row.name === "string" ? row.name.trim().slice(0, 16) : ""
+  if (!name) return null
+  const listed = Array.isArray(row.roles) ? row.roles : null
+  const roles = listed ? ALL_ROLES.filter((role) => listed.includes(role)) : [...ALL_ROLES]
+  const heroes = Array.isArray(row.heroes)
+    ? [...new Set(row.heroes.filter((item): item is string => typeof item === "string" && item.length > 0))]
+    : []
+  const refs = (value: unknown) => Array.isArray(value)
+    ? uniqueNames(value.filter((item): item is string => typeof item === "string"))
+    : []
+  const seen = typeof row.seen === "number" && Number.isFinite(row.seen) ? row.seen : 0
+  const created = typeof row.created === "number" && Number.isFinite(row.created) ? row.created : seen
+  const id = typeof row.id === "string" && row.id ? row.id : ""
+  return {
+    id,
+    name,
+    roles,
+    heroes,
+    heroNone: row.heroNone === true,
+    ally: refs(row.ally),
+    avoid: refs(row.avoid),
+    seen,
+    created: created || Date.now(),
+  }
+}
+
+function exclusivePlayerPairs(players: PlayerProfile[]): PlayerProfile[] {
+  const next = players.map((row) => ({ ...row, ally: [...row.ally], avoid: [...row.avoid] }))
+  for (let i = 0; i < next.length; i += 1) {
+    for (let j = i + 1; j < next.length; j += 1) {
+      const a = next[i].id
+      const b = next[j].id
+      if (!a || !b) continue
+      const avoided = next[i].avoid.includes(b) || next[j].avoid.includes(a)
+      const allied = next[i].ally.includes(b) || next[j].ally.includes(a)
+      if (avoided && allied) {
+        next[i].ally = next[i].ally.filter((item) => item !== b)
+        next[j].ally = next[j].ally.filter((item) => item !== a)
+      } else if (allied) {
+        if (!next[i].ally.includes(b)) next[i].ally.push(b)
+        if (!next[j].ally.includes(a)) next[j].ally.push(a)
+      } else if (avoided) {
+        if (!next[i].avoid.includes(b)) next[i].avoid.push(b)
+        if (!next[j].avoid.includes(a)) next[j].avoid.push(a)
+      }
+    }
+  }
+  return next
+}
+
+export function parsePlayerLibrary(raw: unknown): PlayerProfile[] {
+  if (!Array.isArray(raw)) return []
+  const used = new Set<string>()
+  const rows: PlayerProfile[] = []
+  raw.forEach((item) => {
+    const row = parsePlayerProfile(item)
+    if (!row) return
+    let id = row.id
+    if (!id || used.has(id)) id = row.id ? `${row.id}-${newPlayerId()}` : `legacy:${row.name}:${row.created || row.seen || rows.length}`
+    if (used.has(id)) id = newPlayerId()
+    used.add(id)
+    rows.push({ ...row, id })
+  })
+  const byId = new Set(rows.map((row) => row.id))
+  const byName = new Map<string, string>()
+  rows.forEach((row) => {
+    if (!byName.has(row.name)) byName.set(row.name, row.id)
+  })
+  const remap = (refs: string[], self: string) => uniqueNames(refs.map((item) => {
+    if (item === self) return ""
+    if (byId.has(item)) return item
+    return byName.get(item) || ""
+  }), self)
+  return exclusivePlayerPairs(rows.map((row) => ({
+    ...row,
+    ally: remap(row.ally, row.id),
+    avoid: remap(row.avoid, row.id),
+  })))
+}
+
+export function extractPlayersFromRoster(roster: RosterEntry[]): PlayerProfile[] {
+  const names = roster.map((entry, index) => seatedName(entry, index))
+  const out: PlayerProfile[] = []
+  roster.forEach((entry, index) => {
+    const name = names[index]
+    if (!name) return
+    const now = Date.now()
+    const id = entry.playerId || newPlayerId()
+    const ally = uniqueNames(entry.ally.map((item) => seatedPlayerId(roster[item] || emptySeat())))
+    const avoid = uniqueNames(entry.avoid.map((item) => seatedPlayerId(roster[item] || emptySeat())))
+    out.push({
+      id,
+      name,
+      roles: entry.roles,
+      heroes: entry.heroes,
+      heroNone: entry.heroNone,
+      ally,
+      avoid,
+      seen: now,
+      created: now,
+    })
+  })
+  return out
+}
+
+export function mergePlayers(library: PlayerProfile[], roster: RosterEntry[], admit = false): PlayerProfile[] {
+  const seatedIds = new Set(roster.map((entry) => seatedPlayerId(entry)).filter(Boolean))
+  const map = new Map<string, PlayerProfile>()
+  library.forEach((row) => {
+    if (row.id) map.set(row.id, row)
+  })
+  roster.forEach((entry, index) => {
+    const id = seatedPlayerId(entry)
+    const name = seatedName(entry, index)
+    if (!id || !name) return
+    const ally = uniqueNames(entry.ally.map((item) => seatedPlayerId(roster[item] || emptySeat())))
+    const avoid = uniqueNames(entry.avoid.map((item) => seatedPlayerId(roster[item] || emptySeat())))
+    const prev = map.get(id)
+    if (!prev) {
+      if (admit) map.set(id, { id, name, roles: entry.roles, heroes: entry.heroes, heroNone: entry.heroNone, ally, avoid, seen: Date.now(), created: Date.now() })
+      return
+    }
+    map.set(id, {
+      ...prev,
+      name,
+      roles: entry.roles,
+      heroes: entry.heroes,
+      heroNone: entry.heroNone,
+      ally: uniqueNames([...prev.ally.filter((item) => !seatedIds.has(item)), ...ally], id),
+      avoid: uniqueNames([...prev.avoid.filter((item) => !seatedIds.has(item)), ...avoid], id),
+      seen: Date.now(),
+    })
+  })
+  return exclusivePlayerPairs([...map.values()])
+}
+
+export function applyPlayerPairs(roster: RosterEntry[], players: PlayerProfile[]): RosterEntry[] {
+  const byId = new Map(players.map((row) => [row.id, row]))
+  const ids = roster.map((entry) => seatedPlayerId(entry))
+  const next = roster.map((entry, index) => {
+    const id = ids[index]
+    if (!id) return entry
+    const profile = byId.get(id)
+    if (!profile) return { ...entry, playerId: "" }
+    const ally: number[] = entry.ally.filter((item) => !ids[item])
+    const avoid: number[] = entry.avoid.filter((item) => !ids[item])
+    ids.forEach((other, otherIndex) => {
+      if (otherIndex === index || !other) return
+      const peer = byId.get(other)
+      const avoided = profile.avoid.includes(other) || (peer ? peer.avoid.includes(id) : false)
+      const allied = profile.ally.includes(other) || (peer ? peer.ally.includes(id) : false)
+      if (avoided) avoid.push(otherIndex)
+      else if (allied) ally.push(otherIndex)
+    })
+    return { ...entry, ally: [...new Set(ally)], avoid: [...new Set(avoid)] }
+  })
+  return exclusiveRoster(next)
+}
+
+export function setNamedPair(players: PlayerProfile[], left: string, right: string, key: "ally" | "avoid", on: boolean): PlayerProfile[] {
+  if (!left || !right || left === right) return players
+  const flip = key === "ally" ? "avoid" : "ally"
+  const map = new Map(players.map((row) => [row.id, { ...row, ally: [...row.ally], avoid: [...row.avoid] }]))
+  if (!map.has(left) && !map.has(right)) return players
+  const leftRow = map.get(left)
+  const rightRow = map.get(right)
+  const current = Boolean(leftRow && (leftRow[key].includes(right) || (rightRow && rightRow[key].includes(left))))
+  if (current === on) return exclusivePlayerPairs([...map.values()])
+  ;[left, right].forEach((id) => {
+    const other = id === left ? right : left
+    const row = map.get(id)
+    if (!row) return
+    if (on) {
+      if (!row[key].includes(other)) row[key].push(other)
+      row[flip] = row[flip].filter((item) => item !== other)
+    } else {
+      row[key] = row[key].filter((item) => item !== other)
+    }
+  })
+  return exclusivePlayerPairs([...map.values()])
+}
+
+export function renamePlayer(players: PlayerProfile[], id: string, to: string): PlayerProfile[] {
+  const nextName = to.trim().slice(0, 16)
+  if (!id || !nextName) return players
+  return players.map((row) => (row.id === id ? { ...row, name: nextName, seen: Date.now() } : row))
+}
+
+export function deletePlayer(players: PlayerProfile[], id: string): PlayerProfile[] {
+  return players.filter((row) => row.id !== id).map((row) => ({
+    ...row,
+    ally: row.ally.filter((item) => item !== id),
+    avoid: row.avoid.filter((item) => item !== id),
+  }))
+}
+
+export function fillSeatFromProfile(roster: RosterEntry[], index: number, profile: PlayerProfile): RosterEntry[] {
+  return roster.map((entry, seat) => {
+    if (seat !== index) return entry
+    return {
+      name: profile.name,
+      open: true,
+      roles: profile.roles.length ? profile.roles : [...ALL_ROLES],
+      heroes: [...profile.heroes],
+      heroNone: profile.heroNone,
+      ally: [],
+      avoid: [],
+      playerId: profile.id,
+    }
+  })
+}
+
+export function findPlayer(players: PlayerProfile[], id: string) {
+  return players.find((row) => row.id === id)
+}
+
+export function sortPlayers(players: PlayerProfile[]) {
+  return players.slice().sort((a, b) => b.seen - a.seen || b.created - a.created || a.name.localeCompare(b.name, "zh"))
 }
 
 export function remapRoster(roster: RosterEntry[], from: Format, to: Format): RosterEntry[] {
@@ -200,6 +481,7 @@ export type SavedState = {
   v: 1
   format: Format
   roster: RosterEntry[]
+  players?: PlayerProfile[]
   rules: Rules
   poolVersion: string
   heroes: Record<string, { enabled: boolean; rating: Tier }>
@@ -671,15 +953,19 @@ export function loadSaved(): SavedState | null {
     const data = JSON.parse(localStorage.getItem(STORE_KEY) || "null") as (SavedState & { names?: string[] }) | null
     if (!data || data.v !== 1) return null
     const format: Format = data.format === 6 ? 6 : 5
-    const roster = Array.isArray(data.roster) && data.roster.length
-      ? data.roster.map(parseRosterEntry)
-      : Array.isArray(data.names)
-        ? data.names.map((name) => parseRosterEntry(name))
-        : []
+    const roster = padRoster(
+      Array.isArray(data.roster) && data.roster.length
+        ? data.roster.map(parseRosterEntry)
+        : Array.isArray(data.names)
+          ? data.names.map((name) => parseRosterEntry(name))
+          : [],
+    )
+    const players = mergePlayers(parsePlayerLibrary(data.players), roster, data.players == null)
     return {
       v: 1,
       format,
-      roster: padRoster(roster),
+      roster: applyPlayerPairs(roster, players),
+      players,
       rules: { ...defaultRules(), ...data.rules },
       poolVersion: typeof data.poolVersion === "string" ? data.poolVersion : "",
       heroes: data.heroes || {},

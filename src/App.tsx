@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Check, ChevronDown, ChevronUp, Copy, Crosshair, Heart, Image, Loader2, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Settings2, Share2, Shield, Shuffle, TriangleAlert, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Copy, Crosshair, Heart, Image, Import, Loader2, MoreHorizontal, Pencil, RotateCcw, RotateCw, Search, Settings2, Share2, Shield, Shuffle, Star, Trash2, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { HeroPortrait } from "./components/HeroPortrait"
 import { cardImageFile, renderMatchCard } from "./lib/shareCard"
@@ -29,25 +29,40 @@ import {
   MODE_ORDER,
   POOL_VERSION,
   TIER_RANK,
+  applyPlayerPairs,
   defaultRules,
+  deletePlayer,
   emptySeat,
+  extractPlayersFromRoster,
+  seatedPlayerId,
+  newPlayerId,
+  formatFavoriteDate,
+  fillSeatFromProfile,
+  findPlayer,
   heroByName,
   hydrateCatalogs,
   loadSaved,
   matchChatText,
+  mergePlayers,
   padRoster,
+  revealSeats,
   remapPrefIndex,
   remapRoster,
   randomizeMatch,
+  renamePlayer,
   rerollSeat,
   resolveSeatName,
   saveState,
+  seatedName,
   seatLabel,
+  setNamedPair,
+  sortPlayers,
   teamScore,
   type Format,
   type GameMap,
   type Hero,
   type Match,
+  type PlayerProfile,
   type Role,
   type RosterEntry,
   type Rules,
@@ -93,8 +108,6 @@ function ruleTitle(key: keyof Rules, title: string, rules: Rules) {
 function usePrefBodyHeight(open: boolean, tick: string) {
   const innerRef = useRef<HTMLDivElement>(null)
   const [height, setHeight] = useState<number | undefined>(undefined)
-  const [chrome, setChrome] = useState<number | undefined>(undefined)
-  const [scrollable, setScrollable] = useState(false)
   useLayoutEffect(() => {
     if (!open) return
     const el = innerRef.current
@@ -104,23 +117,24 @@ function usePrefBodyHeight(open: boolean, tick: string) {
       const head = dialog?.querySelector("[data-pref-head]") as HTMLElement | null
       const foot = dialog?.querySelector("[data-pref-foot]") as HTMLElement | null
       const borders = dialog ? dialog.offsetHeight - dialog.clientHeight : 0
-      const nextChrome = (head?.offsetHeight ?? 0) + (foot?.offsetHeight ?? 0) + borders
-      const cap = Math.max(0, window.innerHeight * 0.85 - nextChrome)
+      const chrome = (head?.offsetHeight ?? 0) + (foot?.offsetHeight ?? 0) + borders
+      const view = window.visualViewport?.height ?? window.innerHeight
+      const cap = Math.max(0, view * 0.85 - chrome)
       const needed = el.scrollHeight
-      setChrome(nextChrome)
-      setHeight(needed)
-      setScrollable(cap > 0 && needed > cap + 1)
+      setHeight(cap > 0 ? Math.min(needed, cap) : needed)
     }
     apply()
     const ro = new ResizeObserver(apply)
     ro.observe(el)
     window.addEventListener("resize", apply)
+    window.visualViewport?.addEventListener("resize", apply)
     return () => {
       ro.disconnect()
       window.removeEventListener("resize", apply)
+      window.visualViewport?.removeEventListener("resize", apply)
     }
   }, [open, tick])
-  return { innerRef, height, chrome, scrollable }
+  return { innerRef, height }
 }
 
 function copyToClipboard(text: string) {
@@ -319,6 +333,124 @@ function QuestionMark({ className }: { className?: string }) {
   )
 }
 
+const FAVORITE_FILTER_MIN = 8
+
+function ListFilter({
+  value,
+  onChange,
+  autoFocus,
+  onEnter,
+}: {
+  value: string
+  onChange: (value: string) => void
+  autoFocus?: boolean
+  onEnter?: () => void
+}) {
+  return (
+    <label className="flex items-center gap-2">
+      <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+      <input
+        value={value}
+        autoFocus={autoFocus}
+        placeholder="筛选"
+        aria-label="筛选"
+        className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && onEnter) {
+            event.preventDefault()
+            onEnter()
+          }
+        }}
+      />
+    </label>
+  )
+}
+
+function SeatRow({
+  index,
+  entry,
+  recorded,
+  onVacate,
+  onDraftName,
+  onBindName,
+  onPref,
+  onToggleRecord,
+  onImport,
+}: {
+  index: number
+  entry: RosterEntry
+  recorded: boolean
+  onVacate: () => void
+  onDraftName: (name: string) => void
+  onBindName: (name: string) => void
+  onPref: () => void
+  onToggleRecord: () => void
+  onImport: () => void
+}) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    if (!menuOpen) return
+    const hide = (event: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener("mousedown", hide)
+    return () => document.removeEventListener("mousedown", hide)
+  }, [menuOpen])
+  return (
+    <div ref={boxRef} className={`group relative flex h-12 items-center gap-2 px-3 ${menuOpen ? "z-20" : ""}`}>
+      <span className="w-6 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+      <Input
+        maxLength={16}
+        value={entry.name}
+        placeholder={seatLabel(index)}
+        aria-label={seatLabel(index)}
+        autoComplete="off"
+        className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+        onChange={(event) => onDraftName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault()
+            onBindName(event.currentTarget.value)
+          }
+        }}
+        onBlur={(event) => onBindName(event.target.value)}
+      />
+      {recorded ? (
+        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="取消收藏" onClick={onToggleRecord}>
+          <Star className="h-4 w-4 fill-primary text-primary" />
+        </Button>
+      ) : null}
+      <div className="relative shrink-0">
+        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" aria-label="更多" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+        {menuOpen ? (
+          <div className="absolute right-0 z-50 mt-1 flex w-max min-w-36 flex-col gap-0.5 rounded-md border bg-popover p-0.5 shadow-md">
+            <Button type="button" variant="ghost" size="sm" className="h-8 w-full justify-start px-2" onClick={() => { setMenuOpen(false); onToggleRecord() }}>
+              <Star className={`h-4 w-4 ${recorded ? "fill-primary text-primary" : ""}`} />
+              {recorded ? "取消收藏" : "加入收藏"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-8 w-full justify-start px-2" onClick={() => { setMenuOpen(false); onImport() }}>
+              <Import className="h-4 w-4" />
+              导入收藏
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-8 w-full justify-start px-2" onClick={() => { setMenuOpen(false); onPref() }}>
+              <Settings2 className="h-4 w-4" />
+              偏好设置
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-8 w-full justify-start px-2 text-destructive hover:text-destructive" onClick={() => { setMenuOpen(false); onVacate() }}>
+              <RotateCcw className="h-4 w-4" />
+              玩家重置
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function PrefTabs({
   prefTab,
   setPrefTab,
@@ -346,7 +478,7 @@ function PrefTabs({
   prefClear: () => void
   onDone: () => void
 }) {
-  const { innerRef, height, chrome, scrollable } = usePrefBodyHeight(true, `${prefTab}:${prefIndex}:${format}`)
+  const { innerRef, height } = usePrefBodyHeight(true, `${prefTab}:${prefIndex}:${format}`)
   const entry = roster[prefIndex]
   return (
     <Tabs value={prefTab} onValueChange={setPrefTab} className="flex min-h-0 flex-col overflow-hidden">
@@ -361,13 +493,10 @@ function PrefTabs({
         </TabsList>
       </DialogHeader>
       <div
-        className={`min-h-0 motion-reduce:transition-none ${scrollable ? "overflow-y-auto" : "overflow-hidden"}`}
-        style={{
-          height,
-          maxHeight: chrome == null ? undefined : `calc(85dvh - ${chrome}px)`,
-          transition: "height 220ms ease",
-        }}
+        className="min-h-0 overflow-hidden motion-reduce:transition-none"
+        style={{ height, transition: "height 220ms ease" }}
       >
+        <ScrollArea className="h-full">
         <div ref={innerRef}>
           <TabsContent value="roles" className="mt-0 px-6 py-4">
             <ToggleGroup
@@ -436,6 +565,7 @@ function PrefTabs({
             </TabsContent>
           ))}
         </div>
+        </ScrollArea>
       </div>
       <DialogFooter className="flex-row items-center justify-between gap-2 space-x-0 border-t px-6 py-4 sm:justify-between" data-pref-foot="">
         <div className="flex gap-1">
@@ -488,7 +618,10 @@ export default function App() {
   const saved = useMemo(() => loadSaved(), [])
   const boot = useMemo(() => hydrateCatalogs(saved), [saved])
   const [format, setFormat] = useState<Format>(() => saved?.format === 6 ? 6 : 5)
-  const [roster, setRoster] = useState<RosterEntry[]>(() => padRoster(saved?.roster ?? []))
+  const [roster, setRoster] = useState<RosterEntry[]>(() => revealSeats(padRoster(saved?.roster ?? []), saved?.format === 6 ? 6 : 5))
+  const [players, setPlayers] = useState<PlayerProfile[]>(() => saved?.players ?? mergePlayers([], saved?.roster ?? []))
+  const playersRef = useRef<PlayerProfile[]>([])
+  playersRef.current = players
   const [prefIndex, setPrefIndex] = useState<number | null>(null)
   const [prefTab, setPrefTab] = useState("roles")
   const [rules, setRules] = useState<Rules>(() => ({ ...defaultRules(), ...saved?.rules }))
@@ -499,6 +632,10 @@ export default function App() {
   const [collapsedRules, setCollapsedRules] = useState(saved?.collapsedRules ?? true)
   const [match, setMatch] = useState<Match | null>(null)
   const [poolOpen, setPoolOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [libraryQuery, setLibraryQuery] = useState("")
+  const [importSeat, setImportSeat] = useState<number | null>(null)
+  const [importQuery, setImportQuery] = useState("")
   const [poolTab, setPoolTab] = useState<"heroes" | "maps">("heroes")
   const [draftHeroes, setDraftHeroes] = useState<Hero[]>([])
   const [draftMaps, setDraftMaps] = useState<GameMap[]>([])
@@ -556,6 +693,7 @@ export default function App() {
       v: 1,
       format,
       roster,
+      players,
       rules,
       collapsed: collapsedHeroes,
       collapsedMaps,
@@ -564,7 +702,7 @@ export default function App() {
       heroes: Object.fromEntries(heroes.map((hero) => [hero.name, { enabled: hero.enabled, rating: hero.rating }])),
       maps: Object.fromEntries(maps.map((map) => [map.name, map.enabled])),
     })
-  }, [format, roster, rules, collapsedHeroes, collapsedMaps, collapsedRules, heroes, maps])
+  }, [format, roster, players, rules, collapsedHeroes, collapsedMaps, collapsedRules, heroes, maps])
 
   const heroOn = heroes.filter((hero) => hero.enabled).length
   const mapOn = maps.filter((map) => map.enabled).length
@@ -577,6 +715,14 @@ export default function App() {
     toast.success(message, { icon: <Check className="h-4 w-4 text-emerald-400" /> })
   }
 
+  function commit(nextRoster: RosterEntry[], nextPlayers?: PlayerProfile[]) {
+    const merged = mergePlayers(nextPlayers ?? playersRef.current, nextRoster)
+    const paired = applyPlayerPairs(nextRoster, merged)
+    playersRef.current = merged
+    setPlayers(merged)
+    setRoster(paired)
+  }
+
   function deal() {
     try {
       setMatch(randomizeMatch(heroes, maps, roster, rules, format))
@@ -587,7 +733,7 @@ export default function App() {
 
   function switchFormat(next: Format) {
     if (next === format) return
-    setRoster((prev) => remapRoster(prev, format, next))
+    commit(revealSeats(remapRoster(roster, format, next), next))
     setPrefIndex((prev) => {
       const mapped = remapPrefIndex(prev, format, next)
       if (next === 5 && mapped != null && mapped >= 10) return null
@@ -597,12 +743,8 @@ export default function App() {
     setMatch(null)
   }
 
-  function openSeat(index: number) {
-    setRoster((prev) => prev.map((entry, i) => (i === index ? { ...entry, open: true } : entry)))
-  }
-
   function vacateSeat(index: number) {
-    setRoster((prev) => prev.map((entry, i) => {
+    commit(roster.map((entry, i) => {
       if (i === index) return emptySeat()
       return {
         ...entry,
@@ -613,24 +755,101 @@ export default function App() {
     if (prefIndex === index) setPrefIndex(null)
   }
 
+  function draftSeatName(index: number, name: string) {
+    setRoster((prev) => prev.map((entry, i) => (i === index ? { ...entry, name } : entry)))
+  }
+
+  function bindSeatName(index: number, raw: string) {
+    const name = raw.trim().slice(0, 16)
+    const playerId = seatedPlayerId(roster[index])
+    if (!name) {
+      commit(roster.map((entry, i) => (i === index ? { ...entry, name: "", playerId: "" } : entry)))
+      return
+    }
+    if (playerId && findPlayer(playersRef.current, playerId)) {
+      commit(
+        roster.map((entry, i) => (i === index ? { ...entry, name } : entry)),
+        renamePlayer(playersRef.current, playerId, name),
+      )
+      return
+    }
+    commit(roster.map((entry, i) => (i === index ? { ...entry, name, open: true } : entry)))
+  }
+
+  function pickPlayer(index: number, profile: PlayerProfile) {
+    if (roster.some((entry, i) => i !== index && seatedPlayerId(entry) === profile.id)) {
+      showToast("该收藏已存在于玩家名单中")
+      return
+    }
+    const nextPlayers = playersRef.current.map((row) => (row.id === profile.id ? { ...row, seen: Date.now() } : row))
+    commit(fillSeatFromProfile(roster, index, profile), nextPlayers)
+  }
+
+  function toggleRecord(index: number) {
+    const name = seatedName(roster[index], index)
+    if (!name) {
+      showToast("玩家名称确缺失")
+      return
+    }
+    const playerId = seatedPlayerId(roster[index])
+    if (playerId && findPlayer(playersRef.current, playerId)) {
+      commit(
+        roster.map((entry, i) => (i === index ? { ...entry, playerId: "" } : entry)),
+        deletePlayer(playersRef.current, playerId),
+      )
+      return
+    }
+    const id = newPlayerId()
+    const extracted = extractPlayersFromRoster(roster.map((entry, i) => (i === index ? { ...entry, playerId: id } : entry))).find((row) => row.id === id)
+    if (!extracted) return
+    commit(
+      roster.map((entry, i) => (i === index ? { ...entry, playerId: id } : entry)),
+      [...playersRef.current, extracted],
+    )
+  }
+
+  function removeFromLibrary(id: string) {
+    commit(
+      roster.map((entry) => (entry.playerId === id ? { ...entry, playerId: "" } : entry)),
+      deletePlayer(playersRef.current, id),
+    )
+  }
+
+  function clearLibrary() {
+    const ids = new Set(playersRef.current.map((row) => row.id))
+    commit(
+      roster.map((entry) => (ids.has(entry.playerId) ? { ...entry, playerId: "" } : entry)),
+      [],
+    )
+  }
+
+
   function togglePair(index: number, other: number, key: "ally" | "avoid") {
     if (index === other) return
+    const left = seatedPlayerId(roster[index])
+    const right = seatedPlayerId(roster[other])
+    const linked = roster[index][key].includes(other) || roster[other][key].includes(index)
+    const on = linked ? false : true
     const flip = key === "ally" ? "avoid" : "ally"
-    setRoster((prev) => prev.map((entry, i) => {
+    const nextRoster = roster.map((entry, i) => {
       if (i !== index && i !== other) return entry
       const target = i === index ? other : index
-      const on = entry[key].includes(target)
       return {
         ...entry,
-        [key]: on ? entry[key].filter((item) => item !== target) : [...entry[key], target],
+        [key]: on ? (entry[key].includes(target) ? entry[key] : [...entry[key], target]) : entry[key].filter((item) => item !== target),
         [flip]: entry[flip].filter((item) => item !== target),
       }
-    }))
+    })
+    if (left && right && (findPlayer(playersRef.current, left) || findPlayer(playersRef.current, right))) {
+      commit(nextRoster, setNamedPair(playersRef.current, left, right, key, on))
+      return
+    }
+    setRoster(nextRoster)
   }
 
   function toggleHero(index: number, name: string) {
     const all = heroes.map((hero) => hero.name)
-    setRoster((prev) => prev.map((entry, i) => {
+    commit(roster.map((entry, i) => {
       if (i !== index) return entry
       const current = entry.heroNone ? [] : entry.heroes.length ? entry.heroes : all
       const on = current.includes(name)
@@ -647,6 +866,16 @@ export default function App() {
     if (prefTab === "roles") patchRoster(prefIndex, { roles: [...ALL_ROLES] })
     else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: false })
     else if (prefTab === "ally" || prefTab === "avoid") {
+      const self = seatedPlayerId(roster[prefIndex])
+      if (self) {
+        let nextPlayers = playersRef.current
+        others.forEach((index) => {
+          const id = seatedPlayerId(roster[index])
+          if (id) nextPlayers = setNamedPair(nextPlayers, self, id, prefTab, true)
+        })
+        commit(roster, nextPlayers)
+        return
+      }
       const flip = prefTab === "ally" ? "avoid" : "ally"
       setRoster((prev) => prev.map((entry, i) => {
         if (i === prefIndex) return { ...entry, [prefTab]: others, [flip]: entry[flip].filter((item) => !others.includes(item)) }
@@ -666,6 +895,16 @@ export default function App() {
     if (prefTab === "roles") patchRoster(prefIndex, { roles: [] })
     else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: true })
     else if (prefTab === "ally" || prefTab === "avoid") {
+      const self = seatedPlayerId(roster[prefIndex])
+      if (self) {
+        let nextPlayers = playersRef.current
+        roster.slice(0, format * 2).forEach((entry) => {
+          const id = seatedPlayerId(entry)
+          if (id && id !== self) nextPlayers = setNamedPair(nextPlayers, self, id, prefTab, false)
+        })
+        commit(roster, nextPlayers)
+        return
+      }
       setRoster((prev) => prev.map((entry, i) => {
         if (i === prefIndex) return { ...entry, [prefTab]: [] }
         if (!entry[prefTab].includes(prefIndex)) return entry
@@ -675,8 +914,13 @@ export default function App() {
   }
 
   function patchRoster(index: number, patch: Partial<RosterEntry>) {
-    setRoster((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)))
+    if (patch.name != null) {
+      draftSeatName(index, patch.name)
+      return
+    }
+    commit(roster.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)))
   }
+
 
   function setRule(key: keyof Rules, value: boolean) {
     setRules((prev) => {
@@ -765,7 +1009,10 @@ export default function App() {
 
   const present = new Set(maps.map((map) => map.mode))
   const modes = [...MODE_ORDER.filter((mode) => present.has(mode)), ...[...present].filter((mode) => !MODE_ORDER.includes(mode))]
-
+  const importBusy = new Set(roster.map((entry) => seatedPlayerId(entry)).filter(Boolean))
+  const importNeedle = importQuery.trim()
+  const importList = sortPlayers(players).filter((row) => !importBusy.has(row.id) && (!importNeedle || row.name.includes(importNeedle)))
+  const libraryList = sortPlayers(players).filter((row) => !libraryQuery.trim() || row.name.includes(libraryQuery.trim()))
   return (
     <div className="mx-auto min-h-screen w-[min(1120px,calc(100%-32px))] space-y-6 py-8 pb-16">
       <header>
@@ -774,7 +1021,7 @@ export default function App() {
         </h1>
       </header>
 
-      <Card>
+      <Card className="overflow-visible">
         <SectionHead
           title="玩家"
           hint="添加玩家名称与偏好"
@@ -786,41 +1033,38 @@ export default function App() {
               </TabsList>
             </Tabs>
           )}
-        />
-        <CardContent className={`grid grid-cols-1 gap-2 sm:grid-cols-2 sm:grid-flow-col ${format === 6 ? "sm:grid-rows-6" : "sm:grid-rows-5"}`}>
-          {roster.slice(0, format * 2).map((entry, index) => (
-            <div
-              key={index}
-              className={`flex h-11 items-center gap-2 rounded-lg border px-2 ${entry.open ? "bg-background" : "border-dashed"}`}
-            >
-              {entry.open ? (
-                <>
-                  <span className="w-7 shrink-0 pr-1 text-right font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
-                  <Input
-                    maxLength={16}
-                    value={entry.name}
-                    placeholder={seatLabel(index)}
-                    aria-label={seatLabel(index)}
-                    className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                    onChange={(event) => patchRoster(index, { name: event.target.value })}
+        >
+          <Button variant="outline" size="sm" className="h-8" onClick={() => { setLibraryQuery(""); setLibraryOpen(true) }}>
+            <Star className="h-4 w-4" />
+            收藏
+          </Button>
+        </SectionHead>
+        <CardContent className="grid grid-cols-1 gap-2 overflow-visible sm:grid-cols-2">
+          {[0, 1].map((col) => (
+            <div key={col} className="divide-y overflow-visible rounded-lg border">
+              {Array.from({ length: format }, (_, row) => {
+                const index = col * format + row
+                const entry = roster[index]
+                return (
+                  <SeatRow
+                    key={index}
+                    index={index}
+                    entry={entry}
+                    recorded={Boolean(seatedPlayerId(entry) && findPlayer(players, seatedPlayerId(entry)))}
+                    onVacate={() => vacateSeat(index)}
+                    onDraftName={(name) => draftSeatName(index, name)}
+                    onBindName={(name) => bindSeatName(index, name)}
+                    onPref={() => { setPrefTab("roles"); setPrefIndex(index) }}
+                    onToggleRecord={() => toggleRecord(index)}
+                    onImport={() => { setImportQuery(""); setImportSeat(index) }}
                   />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`设置玩家 ${resolveSeatName(entry, index)} 的偏好`} onClick={() => { setPrefTab("roles"); setPrefIndex(index) }}>
-                    <Settings2 className="h-4 w-4" />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" aria-label={`移除玩家 ${resolveSeatName(entry, index)}`} onClick={() => vacateSeat(index)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </>
-              ) : (
-                <button type="button" className="flex h-8 min-w-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground" onClick={() => openSeat(index)}>
-                  <Plus className="h-4 w-4" />
-                  添加玩家
-                </button>
-              )}
+                )
+              })}
             </div>
           ))}
         </CardContent>
       </Card>
+
 
       <Card>
         <SectionHead
@@ -1149,6 +1393,95 @@ export default function App() {
             <Button size="sm" className="h-8 min-w-20 px-5" onClick={commitPool}>完成</Button>
           </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importSeat !== null} onOpenChange={(open) => { if (!open) setImportSeat(null) }}>
+        <DialogContent className="flex max-h-[min(36rem,85dvh)] w-[calc(100%-2rem)] max-w-md flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="space-y-3 border-b px-6 pb-4 pt-6 pr-12">
+            <div className="space-y-1.5">
+              <DialogTitle>收藏</DialogTitle>
+              <DialogDescription>从收藏列表中导入玩家</DialogDescription>
+            </div>
+            {players.length >= FAVORITE_FILTER_MIN ? (
+              <ListFilter
+                value={importQuery}
+                autoFocus
+                onChange={setImportQuery}
+                onEnter={() => {
+                  if (!importList.length || importSeat === null) return
+                  pickPlayer(importSeat, importList[0])
+                  setImportSeat(null)
+                }}
+              />
+            ) : null}
+          </DialogHeader>
+          <div className={`min-h-[12rem] px-3 ${importList.length ? "min-h-0 flex-1 py-2" : "flex flex-1 items-center justify-center"}`}>
+            {!importList.length ? (
+              <p className="text-sm text-muted-foreground">暂无收藏</p>
+            ) : (
+              <ScrollArea className="h-full min-h-[12rem]">
+              <ul className="w-full space-y-0.5">
+                {importList.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-baseline justify-between gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent"
+                      onClick={() => {
+                        if (importSeat !== null) pickPlayer(importSeat, row)
+                        setImportSeat(null)
+                      }}
+                    >
+                      <span className="min-w-0 truncate text-sm font-medium">{row.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatFavoriteDate(row.created)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              </ScrollArea>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={libraryOpen} onOpenChange={(open) => { setLibraryOpen(open); if (!open) setLibraryQuery("") }}>
+        <DialogContent className="flex max-h-[min(36rem,85dvh)] w-[calc(100%-2rem)] max-w-md flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="space-y-3 border-b px-6 pb-4 pt-6 pr-12">
+            <div className="space-y-1.5">
+              <DialogTitle>收藏</DialogTitle>
+              <DialogDescription>管理收藏列表</DialogDescription>
+            </div>
+            {players.length >= FAVORITE_FILTER_MIN ? (
+              <ListFilter value={libraryQuery} onChange={setLibraryQuery} />
+            ) : null}
+          </DialogHeader>
+          <div className={`min-h-[12rem] px-3 ${libraryList.length ? "min-h-0 flex-1 py-2" : "flex flex-1 items-center justify-center"}`}>
+            {!libraryList.length ? (
+              <p className="text-sm text-muted-foreground">暂无收藏</p>
+            ) : (
+              <ScrollArea className="h-full min-h-[12rem]">
+              <ul className="w-full space-y-0.5">
+                {libraryList.map((row) => {
+                  const here = roster.some((entry) => seatedPlayerId(entry) === row.id)
+                  return (
+                    <li key={row.id} className="flex items-center gap-3 rounded-md px-3 py-2.5">
+                      <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
+                      {here ? <Badge variant="secondary">使用中</Badge> : null}
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatFavoriteDate(row.created)}</span>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" aria-label={`移除收藏 ${row.name}`} onClick={() => removeFromLibrary(row.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+              </ScrollArea>
+            )}
+          </div>
+          <DialogFooter className="flex-row items-center justify-between gap-2 space-x-0 border-t px-6 py-4 sm:justify-between">
+            <Button variant="outline" size="sm" className="h-8 px-3" disabled={!players.length} onClick={clearLibrary}>清空</Button>
+            <Button size="sm" className="h-8 min-w-20 px-5" onClick={() => setLibraryOpen(false)}>完成</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
