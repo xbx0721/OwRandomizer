@@ -533,29 +533,24 @@ function PrefTabs({
                   <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
                   <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                     {list.map((hero) => {
-                      const id = `pref-hero-${prefIndex}-${hero.name}`
                       const weight = heroWeightOf(entry, hero.name)
                       return (
-                        <label
+                        <div
                           key={hero.name}
-                          htmlFor={id}
-                          className={`flex flex-col gap-1 rounded-md border px-2 py-1.5 ${muted ? "opacity-40" : ""} ${weight === 0 ? "border-dashed" : ""}`}
+                          className={`flex h-9 items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""} ${weight === 0 ? "border-dashed" : ""}`}
                         >
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="truncate text-sm">{hero.name}</span>
-                            <span className={`w-4 shrink-0 text-right text-xs tabular-nums ${weight === 0 ? "text-muted-foreground" : weight >= 8 ? "text-primary" : "text-muted-foreground"}`}>{weight}</span>
-                          </span>
-                          <input
-                            id={id}
-                            type="range"
-                            min={0}
-                            max={10}
-                            step={1}
-                            value={weight}
-                            className="hero-weight"
-                            onChange={(event) => setHeroWeight(prefIndex, hero.name, Number(event.target.value))}
-                          />
-                        </label>
+                          <span className="min-w-0 flex-1 truncate text-sm">{hero.name}</span>
+                          <Select value={String(weight)} onValueChange={(value) => setHeroWeight(prefIndex, hero.name, Number(value))}>
+                            <SelectTrigger className="h-8 w-[4.25rem]" aria-label={`${hero.name} 优先级`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 11 }, (_, n) => (
+                                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       )
                     })}
                   </div>
