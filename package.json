@@ -2,6 +2,8 @@
   "name": "OwRandomizer",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
+  "author": "xbx0721",
   "type": "module",
   "scripts": {
     "dev": "vite",

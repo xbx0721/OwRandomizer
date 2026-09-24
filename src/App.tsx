@@ -1550,6 +1550,12 @@ export default function App() {
           ) : null}
         </DialogContent>
       </Dialog>
+      <footer className="pt-4 text-center text-xs text-muted-foreground">
+        © 2026 xbx0721 · MIT License
+        <span className="mx-1.5">·</span>
+        与暴雪娱乐无关
+      </footer>
+
     </div>
   )
 }
