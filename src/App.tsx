@@ -78,8 +78,9 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
       { key: "rolesOnly", title: "仅分配职责" },
       { key: "balanceRoles", title: "平衡队伍职责" },
       { key: "balanceRatings", title: "平衡英雄评级" },
-      { key: "cycleHeroes", title: "优先空闲英雄" },
-      { key: "cycleMaps", title: "优先空闲地图" },
+      { key: "cycleHeroes", title: "优先剩余英雄" },
+      { key: "cycleMaps", title: "优先剩余地图" },
+      { key: "cycleRoles", title: "优先剩余职责" },
       { key: "allowRepeat", title: "允许重复英雄" },
       { key: "allowReroll", title: "允许重选英雄" },
     ],
@@ -97,7 +98,7 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
 
 function ruleDisabled(key: keyof Rules, rules: Rules) {
   if (rules.teamsOnly) {
-    return key === "balanceRoles" || key === "balanceRatings" || key === "cycleHeroes" || key === "allowRepeat" || key === "allowReroll" || key === "allowPrefRoles" || key === "allowPrefHeroes"
+    return key === "balanceRoles" || key === "balanceRatings" || key === "cycleHeroes" || key === "cycleRoles" || key === "allowRepeat" || key === "allowReroll" || key === "allowPrefRoles" || key === "allowPrefHeroes"
   }
   const heroRule = key === "allowRepeat" || key === "balanceRatings" || key === "cycleHeroes" || key === "allowPrefHeroes"
   return (heroRule && rules.rolesOnly) || (key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)

@@ -12,6 +12,7 @@ export type Rules = {
   balanceRatings: boolean
   cycleHeroes: boolean
   cycleMaps: boolean
+  cycleRoles: boolean
   rolesOnly: boolean
   teamsOnly: boolean
   allowPrefRoles: boolean
@@ -41,10 +42,31 @@ const RATE_TRIES = 360
 export type SessionDraw = {
   heroCount: Record<string, number>
   mapBag: string[]
+  roleCount: Record<string, Partial<Record<Role, number>>>
 }
 
 export function emptySession(): SessionDraw {
-  return { heroCount: {}, mapBag: [] }
+  return { heroCount: {}, mapBag: [], roleCount: {} }
+}
+
+function personKey(entry: RosterEntry, index: number) {
+  return seatedPlayerId(entry) || resolveSeatName(entry, index)
+}
+
+function leastSeenRole(roles: Role[], count?: Partial<Record<Role, number>>): Role {
+  if (!roles.length) return randomItem(ALL_ROLES)
+  if (!count) return randomItem(roles)
+  let min = Infinity
+  roles.forEach((role) => {
+    const n = count[role] || 0
+    if (n < min) min = n
+  })
+  return randomItem(roles.filter((role) => (count[role] || 0) === min))
+}
+
+function roleCycleCost(seats: { role: Role; entry: RosterEntry; index: number }[], session?: SessionDraw) {
+  if (!session) return 0
+  return seats.reduce((sum, seat) => sum + (session.roleCount[personKey(seat.entry, seat.index)]?.[seat.role] || 0), 0)
 }
 
 export type RosterEntry = {
@@ -482,6 +504,7 @@ export const defaultRules = (): Rules => ({
   balanceRatings: true,
   cycleHeroes: true,
   cycleMaps: true,
+  cycleRoles: true,
   rolesOnly: false,
   teamsOnly: false,
   allowPrefRoles: true,
@@ -637,7 +660,23 @@ function bumpHeroes(teams: [Team, Team], count: Record<string, number>) {
   })
 }
 
-function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rules: Rules): { team: 0 | 1; role: Role; entry: RosterEntry; index: number }[] | null {
+function bumpRoles(teams: [Team, Team], roster: RosterEntry[], format: Format, count: Record<string, Partial<Record<Role, number>>>) {
+  const seats = roster.slice(0, format * 2)
+  teams.forEach((team) => {
+    team.forEach((player) => {
+      if (!player.role) return
+      let key = player.name
+      seats.forEach((row, index) => {
+        if (resolveSeatName(row, index) === player.name) key = personKey(row, index)
+      })
+      const row = count[key] || {}
+      row[player.role] = (row[player.role] || 0) + 1
+      count[key] = row
+    })
+  })
+}
+
+function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rules: Rules, session?: SessionDraw): { team: 0 | 1; role: Role; entry: RosterEntry; index: number }[] | null {
   const people = shuffle(roster.map((entry, index) => ({ entry, index })))
   const slots: { team: 0 | 1; role: Role | null }[] = []
   if (rules.balanceRoles && !rules.teamsOnly) {
@@ -679,6 +718,14 @@ function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rule
       }
       return true
     }))
+    if (rules.cycleRoles && session) {
+      const counts = session.roleCount[personKey(entry, seat)] || {}
+      candidates.sort((a, b) => {
+        const left = slots[a].role
+        const right = slots[b].role
+        return (left ? counts[left] || 0 : 0) - (right ? counts[right] || 0 : 0)
+      })
+    }
     for (const slot of candidates) {
       used[slot] = true
       pick[person] = slot
@@ -694,7 +741,9 @@ function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rule
     const fallback = ALL_ROLES.filter((role) => canFillRole(person.entry, role, heroes, rules))
     return {
       team: slots[pick[index]].team,
-      role: need ?? randomItem(fallback.length ? fallback : ALL_ROLES),
+      role: need ?? (rules.cycleRoles && session
+        ? leastSeenRole(fallback.length ? fallback : ALL_ROLES, session.roleCount[personKey(person.entry, person.index)])
+        : randomItem(fallback.length ? fallback : ALL_ROLES)),
       entry: person.entry,
       index: person.index,
     }
@@ -890,23 +939,25 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
   const conflict = pairError(cleaned, format, rules)
   if (conflict) throw new Error(conflict)
   const rate = !rules.rolesOnly && !rules.teamsOnly && rules.balanceRatings
+  const cycleRole = Boolean(rules.cycleRoles && !rules.teamsOnly && session)
+  const search = rate || cycleRole
   const target = rate ? ratingTarget() : 0
   let best: [Team, Team] | null = null
   let bestCost = Infinity
   for (let i = 0; i < RATE_TRIES; i += 1) {
-    const seats = assignSeats(cleaned, format, heroes, rules)
+    const seats = assignSeats(cleaned, format, heroes, rules, session)
     if (!seats) continue
     const teams = rules.teamsOnly
       ? fillTeams(seats, format)
       : rules.rolesOnly
         ? fillRoles(seats, format)
         : fillHeroes(heroes, seats, rules, format, rules.cycleHeroes ? session?.heroCount : undefined)
-    const cost = rate ? ratingCost(scoreDiff(heroes, teams), target) : 0
+    const cost = (rate ? ratingCost(scoreDiff(heroes, teams), target) * 100 : 0) + (cycleRole ? roleCycleCost(seats, session) : 0)
     if (cost < bestCost) {
       best = teams
       bestCost = cost
     }
-    if (!rate) return orderTeams(teams)
+    if (!search) return orderTeams(teams)
     if (bestCost === 0) break
   }
   if (!best) throw new Error("玩家偏好设置冲突")
@@ -936,6 +987,7 @@ export function randomizeMatch(
   if (session) session.mapBag = picked.bag
   const map = picked.map
   if (rules.cycleHeroes && session && !rules.rolesOnly && !rules.teamsOnly) bumpHeroes(teams, session.heroCount)
+  if (rules.cycleRoles && session && !rules.teamsOnly) bumpRoles(teams, trimmed, format, session.roleCount)
   return {
     format,
     map,
@@ -958,10 +1010,19 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   if (match.rolesOnly) {
     if (rules.balanceRoles) return match
     const roles = rules.allowPrefRoles ? allowedRoles(entry ?? emptySeat()) : ALL_ROLES
-    const next = randomItem(roles.filter((role) => role !== target.role).length ? roles.filter((role) => role !== target.role) : roles)
+    const options = roles.filter((role) => role !== target.role)
+    const pool = options.length ? options : roles
+    const seat = roster.slice(0, size * 2).findIndex((row, index) => resolveSeatName(row, index) === target.name)
+    const key = entry && seat >= 0 ? personKey(entry, seat) : target.name
+    const next = rules.cycleRoles && session ? leastSeenRole(pool, session.roleCount[key]) : randomItem(pool)
     if (next === target.role) return match
     const from = target.role
     target.role = next
+    if (rules.cycleRoles && session) {
+      const row = session.roleCount[key] || {}
+      row[next] = (row[next] || 0) + 1
+      session.roleCount[key] = row
+    }
     return {
       ...match,
       teams: orderTeams(teams),
