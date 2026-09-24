@@ -524,7 +524,6 @@ function PrefTabs({
             </ToggleGroup>
           </TabsContent>
           <TabsContent value="heroes" className="mt-0 space-y-3 px-6 py-4">
-            <p className="text-xs text-muted-foreground">0 不抽，5 一般，10 最想要</p>
             {ALL_ROLES.map((role) => {
               const list = heroes.filter((hero) => hero.role === role)
               const muted = entry.roles.length > 0 && entry.roles.indexOf(role) < 0
@@ -537,12 +536,12 @@ function PrefTabs({
                       return (
                         <div
                           key={hero.name}
-                          className={`flex h-9 items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""} ${weight === 0 ? "border-dashed" : ""}`}
+                          className={`flex items-center gap-2 rounded-md border px-2 py-2 ${muted ? "opacity-40" : ""} ${weight === 0 ? "border-dashed" : ""}`}
                         >
                           <span className="min-w-0 flex-1 truncate text-sm">{hero.name}</span>
                           <Select value={String(weight)} onValueChange={(value) => setHeroWeight(prefIndex, hero.name, Number(value))}>
-                            <SelectTrigger className="h-8 w-[4.25rem]" aria-label={`${hero.name} 优先级`}>
-                              <SelectValue />
+                            <SelectTrigger className="h-8 w-[4.25rem] shrink-0" aria-label={`${hero.name} 优先级`}>
+                              <SelectValue placeholder="0">{String(weight)}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               {Array.from({ length: 11 }, (_, n) => (
