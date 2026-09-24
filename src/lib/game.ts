@@ -77,13 +77,14 @@ export type RosterEntry = {
   avoid: number[]
   heroes: string[]
   heroNone: boolean
+  heroWeight: Record<string, number>
   playerId: string
 }
 
 export const ROSTER_CAP = 12
 
 export function emptySeat(): RosterEntry {
-  return { name: "", roles: [...ALL_ROLES], open: true, ally: [], avoid: [], heroes: [], heroNone: false, playerId: "" }
+  return { name: "", roles: [...ALL_ROLES], open: true, ally: [], avoid: [], heroes: [], heroNone: false, heroWeight: {}, playerId: "" }
 }
 
 export function seatLabel(index: number) {
@@ -97,10 +98,10 @@ export function resolveSeatName(entry: Pick<RosterEntry, "name">, index: number)
 export function parseRosterEntry(raw: unknown): RosterEntry {
   if (typeof raw === "string") {
     const name = raw.slice(0, 16)
-    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()), ally: [], avoid: [], heroes: [], heroNone: false, playerId: "" }
+    return { name, roles: [...ALL_ROLES], open: Boolean(name.trim()), ally: [], avoid: [], heroes: [], heroNone: false, heroWeight: {}, playerId: "" }
   }
   if (!raw || typeof raw !== "object") return emptySeat()
-  const row = raw as { name?: unknown; roles?: unknown; open?: unknown; ally?: unknown; avoid?: unknown; heroes?: unknown; heroNone?: unknown; playerId?: unknown }
+  const row = raw as { name?: unknown; roles?: unknown; open?: unknown; ally?: unknown; avoid?: unknown; heroes?: unknown; heroNone?: unknown; heroWeight?: unknown; playerId?: unknown }
   const name = typeof row.name === "string" ? row.name.slice(0, 16) : ""
   const listed = Array.isArray(row.roles) ? row.roles : null
   const roles = listed ? ALL_ROLES.filter((role) => listed.includes(role)) : [...ALL_ROLES]
@@ -112,7 +113,7 @@ export function parseRosterEntry(raw: unknown): RosterEntry {
     ? [...new Set(row.heroes.filter((item): item is string => typeof item === "string" && item.length > 0))]
     : []
   const playerId = typeof row.playerId === "string" ? row.playerId : ""
-  return { name, roles, open, ally: ids(row.ally), avoid: ids(row.avoid), heroes, heroNone: row.heroNone === true, playerId }
+  return { name, roles, open, ally: ids(row.ally), avoid: ids(row.avoid), heroes, heroNone: row.heroNone === true, heroWeight: parseHeroWeight(row.heroWeight), playerId }
 }
 
 export function revealSeats(roster: RosterEntry[], format: Format) {
@@ -155,6 +156,7 @@ export type PlayerProfile = {
   roles: Role[]
   heroes: string[]
   heroNone: boolean
+  heroWeight: Record<string, number>
   ally: string[]
   avoid: string[]
   seen: number
@@ -194,6 +196,7 @@ export function emptyProfile(name: string): PlayerProfile {
     roles: [...ALL_ROLES],
     heroes: [],
     heroNone: false,
+    heroWeight: {},
     ally: [],
     avoid: [],
     seen: now,
@@ -203,7 +206,7 @@ export function emptyProfile(name: string): PlayerProfile {
 
 export function parsePlayerProfile(raw: unknown): PlayerProfile | null {
   if (!raw || typeof raw !== "object") return null
-  const row = raw as { id?: unknown; name?: unknown; roles?: unknown; heroes?: unknown; heroNone?: unknown; ally?: unknown; avoid?: unknown; seen?: unknown; created?: unknown }
+  const row = raw as { id?: unknown; name?: unknown; roles?: unknown; heroes?: unknown; heroNone?: unknown; heroWeight?: unknown; ally?: unknown; avoid?: unknown; seen?: unknown; created?: unknown }
   const name = typeof row.name === "string" ? row.name.trim().slice(0, 16) : ""
   if (!name) return null
   const listed = Array.isArray(row.roles) ? row.roles : null
@@ -223,6 +226,7 @@ export function parsePlayerProfile(raw: unknown): PlayerProfile | null {
     roles,
     heroes,
     heroNone: row.heroNone === true,
+    heroWeight: parseHeroWeight(row.heroWeight),
     ally: refs(row.ally),
     avoid: refs(row.avoid),
     seen,
@@ -300,6 +304,7 @@ export function extractPlayersFromRoster(roster: RosterEntry[]): PlayerProfile[]
       roles: entry.roles,
       heroes: entry.heroes,
       heroNone: entry.heroNone,
+      heroWeight: { ...entry.heroWeight },
       ally,
       avoid,
       seen: now,
@@ -323,7 +328,7 @@ export function mergePlayers(library: PlayerProfile[], roster: RosterEntry[], ad
     const avoid = uniqueNames(entry.avoid.map((item) => seatedPlayerId(roster[item] || emptySeat())))
     const prev = map.get(id)
     if (!prev) {
-      if (admit) map.set(id, { id, name, roles: entry.roles, heroes: entry.heroes, heroNone: entry.heroNone, ally, avoid, seen: Date.now(), created: Date.now() })
+      if (admit) map.set(id, { id, name, roles: entry.roles, heroes: entry.heroes, heroNone: entry.heroNone, heroWeight: { ...entry.heroWeight }, ally, avoid, seen: Date.now(), created: Date.now() })
       return
     }
     map.set(id, {
@@ -332,6 +337,7 @@ export function mergePlayers(library: PlayerProfile[], roster: RosterEntry[], ad
       roles: entry.roles,
       heroes: entry.heroes,
       heroNone: entry.heroNone,
+      heroWeight: { ...entry.heroWeight },
       ally: uniqueNames([...prev.ally.filter((item) => !seatedIds.has(item)), ...ally], id),
       avoid: uniqueNames([...prev.avoid.filter((item) => !seatedIds.has(item)), ...avoid], id),
       seen: Date.now(),
@@ -409,6 +415,7 @@ export function fillSeatFromProfile(roster: RosterEntry[], index: number, profil
       roles: profile.roles.length ? profile.roles : [...ALL_ROLES],
       heroes: [...profile.heroes],
       heroNone: profile.heroNone,
+      heroWeight: { ...profile.heroWeight },
       ally: [],
       avoid: [],
       playerId: profile.id,
@@ -464,24 +471,85 @@ export function allowedRoles(entry: RosterEntry): Role[] {
   return entry.roles.length ? entry.roles : ALL_ROLES
 }
 
+export const HERO_WEIGHT_MAX = 10
+export const HERO_WEIGHT_DEFAULT = 5
+
+export function clampHeroWeight(value: number) {
+  if (!Number.isFinite(value)) return HERO_WEIGHT_DEFAULT
+  return Math.min(HERO_WEIGHT_MAX, Math.max(0, Math.round(value)))
+}
+
+function parseHeroWeight(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, number> = {}
+  Object.entries(raw as Record<string, unknown>).forEach(([name, value]) => {
+    if (!name || typeof value !== "number" || !Number.isFinite(value)) return
+    out[name] = clampHeroWeight(value)
+  })
+  return out
+}
+
+export function heroWeightOf(entry: Pick<RosterEntry, "heroes" | "heroNone" | "heroWeight">, name: string): number {
+  const stored = entry.heroWeight[name]
+  if (typeof stored === "number") return clampHeroWeight(stored)
+  if (entry.heroNone) return 0
+  if (entry.heroes.length) return entry.heroes.includes(name) ? HERO_WEIGHT_DEFAULT : 0
+  return HERO_WEIGHT_DEFAULT
+}
+
+function serializeHeroWeights(entry: RosterEntry, values: Record<string, number>, allNames: string[]): RosterEntry {
+  const nums = allNames.map((name) => clampHeroWeight(values[name] ?? HERO_WEIGHT_DEFAULT))
+  if (nums.every((n) => n === 0)) return { ...entry, heroWeight: {}, heroes: [], heroNone: true }
+  if (nums.every((n) => n === HERO_WEIGHT_DEFAULT)) return { ...entry, heroWeight: {}, heroes: [], heroNone: false }
+  const sparse: Record<string, number> = {}
+  const positives: string[] = []
+  allNames.forEach((name, index) => {
+    if (nums[index] !== HERO_WEIGHT_DEFAULT) sparse[name] = nums[index]
+    if (nums[index] > 0) positives.push(name)
+  })
+  const anyZero = nums.some((n) => n === 0)
+  const anySkew = nums.some((n) => n !== 0 && n !== HERO_WEIGHT_DEFAULT)
+  if (anyZero && !anySkew) return { ...entry, heroWeight: {}, heroes: positives, heroNone: false }
+  return { ...entry, heroWeight: sparse, heroes: anyZero ? positives : [], heroNone: false }
+}
+
+export function patchHeroWeight(entry: RosterEntry, name: string, value: number, allNames: string[]): RosterEntry {
+  const values: Record<string, number> = {}
+  allNames.forEach((item) => { values[item] = heroWeightOf(entry, item) })
+  values[name] = clampHeroWeight(value)
+  return serializeHeroWeights(entry, values, allNames)
+}
+
+export function resetHeroWeights(entry: RosterEntry, allNames: string[], value: number): RosterEntry {
+  const n = clampHeroWeight(value)
+  return serializeHeroWeights(entry, Object.fromEntries(allNames.map((name) => [name, n])), allNames)
+}
+
+export function hasHeroPriority(roster: RosterEntry[]): boolean {
+  return roster.some((entry) => Object.values(entry.heroWeight).some((value) => {
+    const n = clampHeroWeight(value)
+    return n > 0 && n !== HERO_WEIGHT_DEFAULT
+  }))
+}
+
 export function allowedHeroNames(entry: RosterEntry): Set<string> | null {
-  if (entry.heroNone) return new Set()
-  return entry.heroes.length ? new Set(entry.heroes) : null
+  if (entry.heroNone && !Object.keys(entry.heroWeight).length && !entry.heroes.length) return new Set()
+  if (entry.heroes.length) return new Set(entry.heroes.filter((name) => heroWeightOf(entry, name) > 0))
+  if (Object.values(entry.heroWeight).some((value) => clampHeroWeight(value) <= 0)) return null
+  return null
 }
 
 export function entryCanTakeRole(entry: RosterEntry, role: Role, heroes: Hero[], ignoreHeroes = false): boolean {
   if (!allowedRoles(entry).includes(role)) return false
   if (ignoreHeroes) return true
-  const allow = allowedHeroNames(entry)
-  return heroPool(heroes).some((hero) => hero.role === role && (!allow || allow.has(hero.name)))
+  return heroPool(heroes).some((hero) => hero.role === role && heroWeightOf(entry, hero.name) > 0)
 }
 
 function canFillRole(entry: RosterEntry, role: Role, heroes: Hero[], rules: Rules): boolean {
   if (rules.teamsOnly) return true
   if (rules.allowPrefRoles && !allowedRoles(entry).includes(role)) return false
   if (rules.rolesOnly || !rules.allowPrefHeroes) return true
-  const allow = allowedHeroNames(entry)
-  return heroPool(heroes).some((hero) => hero.role === role && (!allow || allow.has(hero.name)))
+  return heroPool(heroes).some((hero) => hero.role === role && heroWeightOf(entry, hero.name) > 0)
 }
 
 export function roleSlots(format: Format): Role[] {
@@ -548,6 +616,19 @@ export function shuffle<T>(items: T[]): T[] {
 
 export function randomItem<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)]
+}
+
+function weightedItem<T>(items: T[], weight: (item: T) => number): T {
+  if (items.length === 1) return items[0]
+  const weights = items.map((item) => Math.max(0, weight(item)))
+  const total = weights.reduce((sum, n) => sum + n, 0)
+  if (total <= 0) return randomItem(items)
+  let cursor = Math.random() * total
+  for (let i = 0; i < items.length; i += 1) {
+    cursor -= weights[i]
+    if (cursor < 0) return items[i]
+  }
+  return items[items.length - 1]
 }
 
 export function ratingOf(heroes: Hero[], name: string): Tier {
@@ -619,7 +700,7 @@ function pickHero(
     allowRepeat: boolean
     usedAcross: Set<string>
     exclude: string | null
-    allow: Set<string> | null
+    prefer?: RosterEntry
     seen?: Record<string, number>
   },
 ): Hero {
@@ -630,12 +711,27 @@ function pickHero(
   let candidates = pool.filter((hero) => {
     if (blocked.has(hero.name)) return false
     if (opts.role && hero.role !== opts.role) return false
-    if (opts.allow && !opts.allow.has(hero.name)) return false
+    if (opts.prefer && heroWeightOf(opts.prefer, hero.name) <= 0) return false
     return true
   })
   if (!candidates.length) throw new Error("玩家偏好设置冲突")
   if (opts.seen) candidates = leastSeen(candidates, opts.seen)
+  if (opts.prefer) return weightedItem(candidates, (hero) => heroWeightOf(opts.prefer as RosterEntry, hero.name))
   return randomItem(candidates)
+}
+
+function heroPrefCost(teams: [Team, Team], seats: { entry: RosterEntry }[]): number {
+  const byName = new Map(seats.map((seat) => [seat.entry.name.trim(), seat.entry]))
+  let cost = 0
+  teams.forEach((team) => {
+    team.forEach((player) => {
+      if (!player.hero) return
+      const entry = byName.get(player.name)
+      if (!entry) return
+      cost += HERO_WEIGHT_MAX - heroWeightOf(entry, player.hero)
+    })
+  })
+  return cost
 }
 
 function takeMap(maps: GameMap[], bag: string[]): { map: GameMap; bag: string[] } {
@@ -772,7 +868,7 @@ function fillHeroes(
       allowRepeat: rules.allowRepeat,
       usedAcross,
       exclude: null,
-      allow: rules.allowPrefHeroes ? allowedHeroNames(seat.entry) : null,
+      prefer: rules.allowPrefHeroes ? seat.entry : undefined,
       seen: rules.cycleHeroes ? seen : undefined,
     })
     const index = at[seat.team]
@@ -940,7 +1036,8 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
   if (conflict) throw new Error(conflict)
   const rate = !rules.rolesOnly && !rules.teamsOnly && rules.balanceRatings
   const cycleRole = Boolean(rules.cycleRoles && !rules.teamsOnly && session)
-  const search = rate || cycleRole
+  const prefer = Boolean(!rules.rolesOnly && !rules.teamsOnly && rules.allowPrefHeroes && hasHeroPriority(cleaned))
+  const search = rate || cycleRole || prefer
   const target = rate ? ratingTarget() : 0
   let best: [Team, Team] | null = null
   let bestCost = Infinity
@@ -952,7 +1049,7 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
       : rules.rolesOnly
         ? fillRoles(seats, format)
         : fillHeroes(heroes, seats, rules, format, rules.cycleHeroes ? session?.heroCount : undefined)
-    const cost = (rate ? ratingCost(scoreDiff(heroes, teams), target) * 100 : 0) + (cycleRole ? roleCycleCost(seats, session) : 0)
+    const cost = (rate ? ratingCost(scoreDiff(heroes, teams), target) * 100 : 0) + (cycleRole ? roleCycleCost(seats, session) : 0) + (prefer ? heroPrefCost(teams, seats) : 0)
     if (cost < bestCost) {
       best = teams
       bestCost = cost
@@ -1036,11 +1133,11 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   const blocked = new Set(usedInTeam)
   if (!rules.allowRepeat) usedAcross.forEach((name) => blocked.add(name))
   blocked.add(oldHero)
-  const allow = rules.allowPrefHeroes && entry ? allowedHeroNames(entry) : null
-  let candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!allow || allow.has(hero.name)))
+  const prefer = rules.allowPrefHeroes ? entry : undefined
+  let candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!prefer || heroWeightOf(prefer, hero.name) > 0))
   if (!candidates.length) return match
   if (rules.cycleHeroes && session) candidates = leastSeen(candidates, session.heroCount)
-  let pick = randomItem(candidates)
+  let pick = prefer ? weightedItem(candidates, (hero) => heroWeightOf(prefer, hero.name)) : randomItem(candidates)
   if (rules.balanceRatings) {
     const targetDiff = ratingTarget()
     let bestCost = Infinity
@@ -1055,7 +1152,7 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
         bests.push(hero)
       } else if (cost === bestCost) bests.push(hero)
     })
-    pick = randomItem(bests)
+    pick = prefer ? weightedItem(bests, (hero) => heroWeightOf(prefer, hero.name)) : randomItem(bests)
   }
   target.hero = pick.name
   target.role = pick.role

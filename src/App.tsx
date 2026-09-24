@@ -41,6 +41,8 @@ import {
   fillSeatFromProfile,
   findPlayer,
   heroByName,
+  heroWeightOf,
+  patchHeroWeight,
   hydrateCatalogs,
   loadSaved,
   matchChatText,
@@ -463,7 +465,7 @@ function PrefTabs({
   format,
   heroes,
   patchRoster,
-  toggleHero,
+  setHeroWeight,
   togglePair,
   prefSelectAll,
   prefClear,
@@ -476,7 +478,7 @@ function PrefTabs({
   format: Format
   heroes: Hero[]
   patchRoster: (index: number, patch: Partial<RosterEntry>) => void
-  toggleHero: (index: number, name: string) => void
+  setHeroWeight: (index: number, name: string, value: number) => void
   togglePair: (index: number, other: number, key: "ally" | "avoid") => void
   prefSelectAll: () => void
   prefClear: () => void
@@ -522,24 +524,37 @@ function PrefTabs({
             </ToggleGroup>
           </TabsContent>
           <TabsContent value="heroes" className="mt-0 space-y-3 px-6 py-4">
+            <p className="text-xs text-muted-foreground">0 不抽，5 一般，10 最想要</p>
             {ALL_ROLES.map((role) => {
               const list = heroes.filter((hero) => hero.role === role)
               const muted = entry.roles.length > 0 && entry.roles.indexOf(role) < 0
               return (
                 <section key={role}>
                   <div className={`mb-2 text-sm font-medium ${muted ? "text-muted-foreground" : ""}`}>{role}</div>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                     {list.map((hero) => {
                       const id = `pref-hero-${prefIndex}-${hero.name}`
-                      const checked = entry.heroNone !== true && (entry.heroes.length === 0 || entry.heroes.includes(hero.name))
+                      const weight = heroWeightOf(entry, hero.name)
                       return (
                         <label
                           key={hero.name}
                           htmlFor={id}
-                          className={`flex h-9 cursor-pointer items-center gap-2 rounded-md border px-2 ${muted ? "opacity-40" : ""}`}
+                          className={`flex flex-col gap-1 rounded-md border px-2 py-1.5 ${muted ? "opacity-40" : ""} ${weight === 0 ? "border-dashed" : ""}`}
                         >
-                          <Checkbox id={id} checked={checked} onCheckedChange={() => toggleHero(prefIndex, hero.name)} />
-                          <span className="truncate text-sm">{hero.name}</span>
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm">{hero.name}</span>
+                            <span className={`w-4 shrink-0 text-right text-xs tabular-nums ${weight === 0 ? "text-muted-foreground" : weight >= 8 ? "text-primary" : "text-muted-foreground"}`}>{weight}</span>
+                          </span>
+                          <input
+                            id={id}
+                            type="range"
+                            min={0}
+                            max={10}
+                            step={1}
+                            value={weight}
+                            className="hero-weight"
+                            onChange={(event) => setHeroWeight(prefIndex, hero.name, Number(event.target.value))}
+                          />
                         </label>
                       )
                     })}
@@ -852,24 +867,16 @@ export default function App() {
     setRoster(nextRoster)
   }
 
-  function toggleHero(index: number, name: string) {
-    const all = heroes.map((hero) => hero.name)
-    commit(roster.map((entry, i) => {
-      if (i !== index) return entry
-      const current = entry.heroNone ? [] : entry.heroes.length ? entry.heroes : all
-      const on = current.includes(name)
-      const next = on ? current.filter((item) => item !== name) : [...current, name]
-      if (!next.length) return { ...entry, heroes: [], heroNone: true }
-      if (all.every((item) => next.includes(item))) return { ...entry, heroes: [], heroNone: false }
-      return { ...entry, heroes: next, heroNone: false }
-    }))
+  function setHeroWeight(index: number, name: string, value: number) {
+    const names = heroes.map((hero) => hero.name)
+    commit(roster.map((entry, i) => (i === index ? patchHeroWeight(entry, name, value, names) : entry)))
   }
 
   function prefSelectAll() {
     if (prefIndex === null) return
     const others = roster.slice(0, format * 2).map((_, index) => index).filter((index) => index !== prefIndex && roster[index].open)
     if (prefTab === "roles") patchRoster(prefIndex, { roles: [...ALL_ROLES] })
-    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: false })
+    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: false, heroWeight: {} })
     else if (prefTab === "ally" || prefTab === "avoid") {
       const self = seatedPlayerId(roster[prefIndex])
       if (self) {
@@ -898,7 +905,7 @@ export default function App() {
   function prefClear() {
     if (prefIndex === null) return
     if (prefTab === "roles") patchRoster(prefIndex, { roles: [] })
-    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: true })
+    else if (prefTab === "heroes") patchRoster(prefIndex, { heroes: [], heroNone: true, heroWeight: {} })
     else if (prefTab === "ally" || prefTab === "avoid") {
       const self = seatedPlayerId(roster[prefIndex])
       if (self) {
@@ -1516,7 +1523,7 @@ export default function App() {
               format={format}
               heroes={heroes}
               patchRoster={patchRoster}
-              toggleHero={toggleHero}
+              setHeroWeight={setHeroWeight}
               togglePair={togglePair}
               prefSelectAll={prefSelectAll}
               prefClear={prefClear}
