@@ -30,7 +30,8 @@ import {
   POOL_VERSION,
   TIER_RANK,
   applyPlayerPairs,
-  defaultRules,
+  normalizeRules,
+  emptySession,
   deletePlayer,
   emptySeat,
   extractPlayersFromRoster,
@@ -77,6 +78,8 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
       { key: "rolesOnly", title: "仅分配职责" },
       { key: "balanceRoles", title: "平衡队伍职责" },
       { key: "balanceRatings", title: "平衡英雄评级" },
+      { key: "cycleHeroes", title: "优先空闲英雄" },
+      { key: "cycleMaps", title: "优先空闲地图" },
       { key: "allowRepeat", title: "允许重复英雄" },
       { key: "allowReroll", title: "允许重选英雄" },
     ],
@@ -94,9 +97,9 @@ const RULE_GROUPS: { title: string; items: { key: keyof Rules; title: string }[]
 
 function ruleDisabled(key: keyof Rules, rules: Rules) {
   if (rules.teamsOnly) {
-    return key === "balanceRoles" || key === "balanceRatings" || key === "allowRepeat" || key === "allowReroll" || key === "allowPrefRoles" || key === "allowPrefHeroes"
+    return key === "balanceRoles" || key === "balanceRatings" || key === "cycleHeroes" || key === "allowRepeat" || key === "allowReroll" || key === "allowPrefRoles" || key === "allowPrefHeroes"
   }
-  const heroRule = key === "allowRepeat" || key === "balanceRatings" || key === "allowPrefHeroes"
+  const heroRule = key === "allowRepeat" || key === "balanceRatings" || key === "cycleHeroes" || key === "allowPrefHeroes"
   return (heroRule && rules.rolesOnly) || (key === "allowReroll" && rules.rolesOnly && rules.balanceRoles)
 }
 
@@ -622,9 +625,10 @@ export default function App() {
   const [players, setPlayers] = useState<PlayerProfile[]>(() => saved?.players ?? mergePlayers([], saved?.roster ?? []))
   const playersRef = useRef<PlayerProfile[]>([])
   playersRef.current = players
+  const sessionRef = useRef(emptySession())
   const [prefIndex, setPrefIndex] = useState<number | null>(null)
   const [prefTab, setPrefTab] = useState("roles")
-  const [rules, setRules] = useState<Rules>(() => ({ ...defaultRules(), ...saved?.rules }))
+  const [rules, setRules] = useState<Rules>(() => normalizeRules(saved?.rules))
   const [heroes, setHeroes] = useState<Hero[]>(boot.heroes)
   const [maps, setMaps] = useState<GameMap[]>(boot.maps)
   const [collapsedHeroes, setCollapsedHeroes] = useState(saved?.collapsed ?? true)
@@ -725,7 +729,7 @@ export default function App() {
 
   function deal() {
     try {
-      setMatch(randomizeMatch(heroes, maps, roster, rules, format))
+      setMatch(randomizeMatch(heroes, maps, roster, rules, format, sessionRef.current))
     } catch (err) {
       showToast(err instanceof Error ? err.message : "对局生成失败")
     }
@@ -1252,7 +1256,7 @@ export default function App() {
                                 )}
                               </span>
                               {canReroll ? (
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的${match.rolesOnly ? "职责" : "英雄"}`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster))}>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`更换 ${player.name} 的${match.rolesOnly ? "职责" : "英雄"}`} onClick={() => setMatch(rerollSeat(heroes, match, rules, teamIndex as 0 | 1, playerIndex, roster, sessionRef.current))}>
                                   <RotateCw className="h-4 w-4" />
                                 </Button>
                               ) : null}

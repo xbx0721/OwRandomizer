@@ -10,6 +10,8 @@ export type Rules = {
   allowRepeat: boolean
   allowReroll: boolean
   balanceRatings: boolean
+  cycleHeroes: boolean
+  cycleMaps: boolean
   rolesOnly: boolean
   teamsOnly: boolean
   allowPrefRoles: boolean
@@ -35,6 +37,15 @@ export type Match = {
 export const ALL_ROLES: Role[] = ["坦克", "输出", "支援"]
 export const STORE_KEY = "OwRandomizer"
 const RATE_TRIES = 360
+
+export type SessionDraw = {
+  heroCount: Record<string, number>
+  mapBag: string[]
+}
+
+export function emptySession(): SessionDraw {
+  return { heroCount: {}, mapBag: [] }
+}
 
 export type RosterEntry = {
   name: string
@@ -469,6 +480,8 @@ export const defaultRules = (): Rules => ({
   allowRepeat: false,
   allowReroll: false,
   balanceRatings: true,
+  cycleHeroes: true,
+  cycleMaps: true,
   rolesOnly: false,
   teamsOnly: false,
   allowPrefRoles: true,
@@ -476,6 +489,16 @@ export const defaultRules = (): Rules => ({
   allowPrefAlly: true,
   allowPrefAvoid: true,
 })
+
+export function normalizeRules(saved?: Partial<Rules> & { cycleSession?: boolean }): Rules {
+  const { cycleSession, ...rest } = (saved || {}) as Partial<Rules> & { cycleSession?: boolean }
+  const next = { ...defaultRules(), ...rest }
+  if (typeof cycleSession === "boolean") {
+    if (!Object.prototype.hasOwnProperty.call(rest, "cycleHeroes")) next.cycleHeroes = cycleSession
+    if (!Object.prototype.hasOwnProperty.call(rest, "cycleMaps")) next.cycleMaps = cycleSession
+  }
+  return next
+}
 
 export type SavedState = {
   v: 1
@@ -556,6 +579,15 @@ export function poolError(heroes: Hero[], maps: GameMap[], rules: Rules, format:
   return null
 }
 
+function leastSeen(candidates: Hero[], count: Record<string, number>): Hero[] {
+  let min = Infinity
+  candidates.forEach((hero) => {
+    const n = count[hero.name] || 0
+    if (n < min) min = n
+  })
+  return candidates.filter((hero) => (count[hero.name] || 0) === min)
+}
+
 function pickHero(
   heroes: Hero[],
   opts: {
@@ -565,20 +597,44 @@ function pickHero(
     usedAcross: Set<string>
     exclude: string | null
     allow: Set<string> | null
+    seen?: Record<string, number>
   },
 ): Hero {
   const pool = heroPool(heroes)
   const blocked = new Set(opts.usedInTeam)
   if (!opts.allowRepeat) opts.usedAcross.forEach((name) => blocked.add(name))
   if (opts.exclude) blocked.add(opts.exclude)
-  const candidates = pool.filter((hero) => {
+  let candidates = pool.filter((hero) => {
     if (blocked.has(hero.name)) return false
     if (opts.role && hero.role !== opts.role) return false
     if (opts.allow && !opts.allow.has(hero.name)) return false
     return true
   })
   if (!candidates.length) throw new Error("玩家偏好设置冲突")
+  if (opts.seen) candidates = leastSeen(candidates, opts.seen)
   return randomItem(candidates)
+}
+
+function takeMap(maps: GameMap[], bag: string[]): { map: GameMap; bag: string[] } {
+  const pool = mapPool(maps)
+  const names = pool.map((map) => map.name)
+  const have = new Set(bag.filter((name) => names.indexOf(name) >= 0))
+  const next = bag.filter((name) => have.has(name))
+  shuffle(names).forEach((name) => {
+    if (!have.has(name)) next.push(name)
+  })
+  const name = next[0]
+  const map = pool.find((item) => item.name === name) || pool[0]
+  return { map, bag: next.slice(1) }
+}
+
+function bumpHeroes(teams: [Team, Team], count: Record<string, number>) {
+  teams.forEach((team) => {
+    team.forEach((player) => {
+      if (!player.hero) return
+      count[player.hero] = (count[player.hero] || 0) + 1
+    })
+  })
 }
 
 function assignSeats(roster: RosterEntry[], format: Format, heroes: Hero[], rules: Rules): { team: 0 | 1; role: Role; entry: RosterEntry; index: number }[] | null {
@@ -650,6 +706,7 @@ function fillHeroes(
   seats: { team: 0 | 1; role: Role; entry: RosterEntry; index: number }[],
   rules: Rules,
   format: Format,
+  seen?: Record<string, number>,
 ): [Team, Team] {
   const size = format
   const teams: [Team, Team] = [
@@ -667,6 +724,7 @@ function fillHeroes(
       usedAcross,
       exclude: null,
       allow: rules.allowPrefHeroes ? allowedHeroNames(seat.entry) : null,
+      seen: rules.cycleHeroes ? seen : undefined,
     })
     const index = at[seat.team]
     at[seat.team] += 1
@@ -827,7 +885,7 @@ function pairError(roster: RosterEntry[], format: Format, rules: Rules): string 
   return null
 }
 
-function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format): [Team, Team] {
+function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: Format, session?: SessionDraw): [Team, Team] {
   const cleaned = exclusiveRoster(roster)
   const conflict = pairError(cleaned, format, rules)
   if (conflict) throw new Error(conflict)
@@ -842,7 +900,7 @@ function dealTeams(heroes: Hero[], roster: RosterEntry[], rules: Rules, format: 
       ? fillTeams(seats, format)
       : rules.rolesOnly
         ? fillRoles(seats, format)
-        : fillHeroes(heroes, seats, rules, format)
+        : fillHeroes(heroes, seats, rules, format, rules.cycleHeroes ? session?.heroCount : undefined)
     const cost = rate ? ratingCost(scoreDiff(heroes, teams), target) : 0
     if (cost < bestCost) {
       best = teams
@@ -861,6 +919,7 @@ export function randomizeMatch(
   roster: RosterEntry[],
   rules: Rules,
   format: Format,
+  session?: SessionDraw,
 ): Match {
   const err = poolError(heroes, maps, rules, format)
   if (err) throw new Error(err)
@@ -870,8 +929,13 @@ export function randomizeMatch(
     throw new Error("请填充玩家名单")
   }
   const trimmed = seats.map((entry, index) => ({ ...entry, name: resolveSeatName(entry, index) }))
-  const teams = dealTeams(heroes, trimmed, rules, format)
-  const map = randomItem(mapPool(maps))
+  const teams = dealTeams(heroes, trimmed, rules, format, session)
+  const picked = rules.cycleMaps && session
+    ? takeMap(maps, session.mapBag)
+    : { map: randomItem(mapPool(maps)), bag: session?.mapBag || [] }
+  if (session) session.mapBag = picked.bag
+  const map = picked.map
+  if (rules.cycleHeroes && session && !rules.rolesOnly && !rules.teamsOnly) bumpHeroes(teams, session.heroCount)
   return {
     format,
     map,
@@ -882,7 +946,7 @@ export function randomizeMatch(
   }
 }
 
-export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex: 0 | 1, playerIndex: number, roster: RosterEntry[]): Match {
+export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex: 0 | 1, playerIndex: number, roster: RosterEntry[], session?: SessionDraw): Match {
   if (match.teamsOnly) return match
   const size = match.format
   const teams: [Team, Team] = [
@@ -912,8 +976,9 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   if (!rules.allowRepeat) usedAcross.forEach((name) => blocked.add(name))
   blocked.add(oldHero)
   const allow = rules.allowPrefHeroes && entry ? allowedHeroNames(entry) : null
-  const candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!allow || allow.has(hero.name)))
+  let candidates = pool.filter((hero) => hero.role === target.role && !blocked.has(hero.name) && (!allow || allow.has(hero.name)))
   if (!candidates.length) return match
+  if (rules.cycleHeroes && session) candidates = leastSeen(candidates, session.heroCount)
   let pick = randomItem(candidates)
   if (rules.balanceRatings) {
     const targetDiff = ratingTarget()
@@ -933,6 +998,7 @@ export function rerollSeat(heroes: Hero[], match: Match, rules: Rules, teamIndex
   }
   target.hero = pick.name
   target.role = pick.role
+  if (rules.cycleHeroes && session && pick.name) session.heroCount[pick.name] = (session.heroCount[pick.name] || 0) + 1
   return {
     ...match,
     teams,
@@ -966,7 +1032,7 @@ export function loadSaved(): SavedState | null {
       format,
       roster: applyPlayerPairs(roster, players),
       players,
-      rules: { ...defaultRules(), ...data.rules },
+      rules: normalizeRules(data.rules),
       poolVersion: typeof data.poolVersion === "string" ? data.poolVersion : "",
       heroes: data.heroes || {},
       maps: data.maps || {},
