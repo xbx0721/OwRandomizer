@@ -1552,10 +1552,6 @@ export default function App() {
           ) : null}
         </DialogContent>
       </Dialog>
-      <footer className="pt-4 text-center text-xs text-muted-foreground">
-        Copyright © 2026 xbx0721
-      </footer>
-
     </div>
   )
 }
