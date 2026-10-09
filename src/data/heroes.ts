@@ -22,7 +22,7 @@ export const HERO_CATALOG: Omit<Hero, "enabled">[] = [
   { name: "查莉娅", role: "坦克", slug: "zarya", rating: "A+", hash: "9b6f63cc66ddf9d5e0862173c733cc0d2e574c5c89357798d91b93b2f95a7080" },
   { name: "温斯顿", role: "坦克", slug: "winston", rating: "B+", hash: "46a10db3aa908c590ddc4e7606376a88143d1f1306ecfbea043263040f9529a5" },
   { name: "莱因哈特", role: "坦克", slug: "reinhardt", rating: "B-", hash: "551fbe070c16fdfcc17f7f1de63af22c53e7d2f1340fc2f3172441504527bc4e" },
-  { name: "路霸", role: "坦克", slug: "roadhog", rating: "C+", hash: "89ddf07e4b619ed96169042e296a1b8856d102746f35add88284b44a9a5a6a03" },
+  { name: "路霸", role: "坦克", slug: "roadhog", rating: "B", hash: "89ddf07e4b619ed96169042e296a1b8856d102746f35add88284b44a9a5a6a03" },
   { name: "西格玛", role: "坦克", slug: "sigma", rating: "A", hash: "a4c032fa466c9a6d9c6974747635d7ef910027f91cd58892af0c899db565f92d" },
   { name: "奥丽莎", role: "坦克", slug: "orisa", rating: "B", hash: "a73958a28551f5254f3ab3f97c5f5f8d698a95c0b6a515d1a2b1caac169205a6" },
   { name: "拉玛刹", role: "坦克", slug: "ramattra", rating: "B", hash: "ddef7c9fb8ce4256e8508196b486f81950efe7aaa6cf27fec4668beb4cd15774" },
@@ -49,7 +49,6 @@ export const HERO_CATALOG: Omit<Hero, "enabled">[] = [
   { name: "回声", role: "输出", slug: "echo", rating: "B+", hash: "d4f2d5b0c2b7e82d61353186c5f23152ccba9d3569b50839aa580dca3e9114ba" },
   { name: "探奇", role: "输出", slug: "venture", rating: "B+", hash: "dcab9123f5f55df22e54d4e797de43c71b917e0149dd059a7fd6136f48464cd0" },
   { name: "秩序之光", role: "输出", slug: "symmetra", rating: "B-", hash: "ebec57e8bd68b3d4383edfeb34f8f52dd0b94a6467d594c2fee722e8a97c32aa" },
-  { name: "黑影", role: "输出", slug: "sombra", rating: "C", hash: "47727b02a16e3bd7b2447d86ae1edf11587bc320b2aecb4f2f16a7ca4ad4e8a0" },
   { name: "弗蕾娅", role: "输出", slug: "freja", rating: "B+", hash: "811963897c352d9f178bec882d94bd0281074feee7c429c5145b6b8ea8ebe862" },
   { name: "斩仇", role: "输出", slug: "vendetta", rating: "B", hash: "cf8ffb52b6f315546d5e94e9d6defad5a2c570798776956de23f47536f9529da" },
   { name: "西拉", role: "输出", slug: "sierra", rating: "B", hash: "4bfd3d8b95844231115cb5bf4db03344c71bc3e865189c52403b2dc51438e63a" },
@@ -71,6 +70,7 @@ export const HERO_CATALOG: Omit<Hero, "enabled">[] = [
   { name: "瑞稀", role: "支援", slug: "mizuki", rating: "A", hash: "a9733c2367e0cbd70b9316fd2e1e17028653ec56d0051ea6ff098531dc4f99fc" },
   { name: "飞天猫", role: "支援", slug: "jetpack-cat", rating: "A+", hash: "03a184cd0de27091e0099ac22635ad9615a8f6997881a5c25cc5f2444764f729" },
   { name: "血律", role: "支援", slug: "doctrine", rating: "A+", hash: "2492a15c575c12314907d0d77501ec337b4d56796bc7f03e5dfb50d415612bae" },
+  { name: "黑影", role: "支援", slug: "sombra", rating: "A+", hash: "47727b02a16e3bd7b2447d86ae1edf11587bc320b2aecb4f2f16a7ca4ad4e8a0" },
 ]
 
 export const TIER_SCORE: Record<Tier, number> = Object.fromEntries(
