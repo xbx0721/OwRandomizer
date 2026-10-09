@@ -1,4 +1,3 @@
-import doctrinePortrait from "../assets/doctrine.jpg"
 import { poolDefaults } from "./pool"
 
 export const TIER_RANK = ["C-","C","C+","B-","B","B+","A-","A","A+","S"] as const
@@ -71,7 +70,7 @@ export const HERO_CATALOG: Omit<Hero, "enabled">[] = [
   { name: "无漾", role: "支援", slug: "wuyang", rating: "A", hash: "4959500b495b35c0908be2abda56b53f2601b2c5cc39a1cfde8df1bffd38d66d" },
   { name: "瑞稀", role: "支援", slug: "mizuki", rating: "A", hash: "a9733c2367e0cbd70b9316fd2e1e17028653ec56d0051ea6ff098531dc4f99fc" },
   { name: "飞天猫", role: "支援", slug: "jetpack-cat", rating: "A+", hash: "03a184cd0de27091e0099ac22635ad9615a8f6997881a5c25cc5f2444764f729" },
-  { name: "血律", role: "支援", slug: "doctrine", rating: "S", portrait: doctrinePortrait },
+  { name: "血律", role: "支援", slug: "doctrine", rating: "A+", hash: "2492a15c575c12314907d0d77501ec337b4d56796bc7f03e5dfb50d415612bae" },
 ]
 
 export const TIER_SCORE: Record<Tier, number> = Object.fromEntries(

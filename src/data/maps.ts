@@ -38,7 +38,7 @@ export const MAP_CATALOG: GameMap[] = [
   { name: "香巴里寺院", mode: "护送", enabled: true },
   { name: "渣客镇", mode: "护送", enabled: true },
   { name: "里阿尔托", mode: "护送", enabled: true },
-  { name: "监测站：格里姆火山", mode: "护送", enabled: false },
+  { name: "格里姆火山", mode: "护送", enabled: true },
   { name: "国王大道", mode: "攻击/护送", enabled: true },
   { name: "好莱坞", mode: "攻击/护送", enabled: true },
   { name: "努巴尼", mode: "攻击/护送", enabled: true },

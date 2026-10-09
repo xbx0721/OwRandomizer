@@ -215,8 +215,8 @@
       "enabled": true
     },
     "血律": {
-      "rating": "S",
-      "enabled": false
+      "rating": "A+",
+      "enabled": true
     }
   },
   "maps": {
@@ -235,7 +235,7 @@
     "香巴里寺院": true,
     "渣客镇": true,
     "里阿尔托": true,
-    "监测站：格里姆火山": false,
+    "格里姆火山": true,
     "国王大道": true,
     "好莱坞": true,
     "努巴尼": true,
